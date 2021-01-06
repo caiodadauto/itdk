@@ -3,16 +3,17 @@ import argparse
 from itdk import location
 
 
-def run(geo_location_path, to_radians, hierarchical):
+def run(geo_location_path, as_location_path, to_radians, hierarchical):
     if hierarchical:
         location.hierarchical_list(geo_location_path, to_radians)
     else:
-        location.list(geo_location_path, to_radians)
+        location.list_with_ASes(geo_location_path, as_location_path, to_radians)
 
 
 if __name__ == "__main__":
     p = argparse.ArgumentParser()
     p.add_argument("geo_location_path", type=str)
+    p.add_argument("as_location_path", type=str)
     p.add_argument(
         "--to-radians",
         action="store_true",
