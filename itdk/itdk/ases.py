@@ -1,5 +1,6 @@
 import re
 
+import pandas as pd
 from progress.counter import Counter
 
 
@@ -15,3 +16,9 @@ def get_all_AS(file_path):
                 ASes[node_id] = as_name
             counter.next()
     return ASes
+
+
+def save_ASes(ASes, file_path):
+    pd.DataFrame(set(ASes.values()), columns=["ases"]).to_hdf(
+        file_path, "ases", mode="a", min_itemsize={"ases": 10}
+    )

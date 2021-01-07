@@ -6,7 +6,7 @@ import pandas as pd
 from progress.counter import Counter
 
 from itdk.logger import create_logger
-from itdk.ases import get_all_AS
+from itdk.ases import get_all_AS, save_ASes
 
 
 def save(store, data, to_radians, use_as=False):
@@ -33,7 +33,10 @@ def save(store, data, to_radians, use_as=False):
         )
     df.latitude = df.latitude.astype("float32")
     df.longitude = df.longitude.astype("float32")
-    store.append("pandas", df, min_itemsize={"id": 9})
+    if use_as:
+        store.append("geo", df, min_itemsize={"id": 9, "ases": 10})
+    else:
+        store.append("geo", df, min_itemsize={"id": 9})
 
 
 def create_empty_lists():
@@ -70,7 +73,7 @@ def close_tables(stores, file_logger):
     for key, store in stores.items():
         file_logger.info(
             "The tabel for {} was closed\n{}".format(
-                key, store.get_storer("pandas").table
+                key, store.get_storer("geo").table
             )
         )
         store.close()
@@ -121,11 +124,14 @@ def hierarchical_list(geo_path, to_radians=False):
 
 
 def list_with_ASes(geo_path, as_file_path, to_radians=False):
-    ASes = get_all_AS(as_file_path)
+    file_path = "data/itdk.h5"
     counter = Counter("Geo Location Processed Lines ")
     file_logger = create_logger("location.log")
     os.makedirs("data/", exist_ok=True)
-    store = pd.HDFStore("data/all_geo.h5")
+    store = pd.HDFStore(file_path)
+
+    ASes = get_all_AS(as_file_path)
+    save_ASes(ASes, file_path)
     data = dict(ids=[], latitudes=[], longitudes=[], ases=[], idxb=0, idxe=0)
     with open(geo_path, "r") as f:
         for line in f:
@@ -153,6 +159,6 @@ def list_with_ASes(geo_path, as_file_path, to_radians=False):
             counter.next()
         check_buffers(store, data, to_radians, True)
     file_logger.info(
-        "The tabel for {} was closed".format(store.get_storer("pandas").table)
+        "The tabel for {} was closed".format(store.get_storer("geo").table)
     )
     store.close()
