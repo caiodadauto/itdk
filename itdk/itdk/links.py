@@ -2,6 +2,8 @@ import os
 import re
 import gzip
 
+import threading
+import concurrent.futures
 import pandas as pd
 from progress.counter import Counter
 
@@ -23,12 +25,11 @@ def get_nodes_from_link(line):
     return nodes
 
 
-def get_AS(idx, nodes, node_ases, file_logger):
+def get_AS(idx, nodes, node_ases):
     node_id = nodes[idx]
     try:
         AS = node_ases[node_id]
     except KeyError:
-        file_logger.info("Node {} does not have AS.".format(node_id))
         AS = None
     return AS
 
@@ -49,42 +50,71 @@ def merge_dict(from_d, to_d):
             to_d[k] = v
 
 
-def save_links_for_ases(node_ases, node_links, file_logger):
-    links = {}
-    intra_AS = 0
-    inter_AS = 0
-    without_AS = 0
-    count_links = {}
-    for nodes in node_links:
+class LinkParser:
+    def __init__(self, node_ases):
+        self.links = {}
+        self.intra_AS = 0
+        self.inter_AS = 0
+        self.without_AS = 0
+        self.count_links = {}
+        self.node_ases = node_ases
+        self.lock = threading.Lock()
+
+    def parse_link(self, nodes):
         n_nodes = len(nodes)
         for i in range(n_nodes):
-            AS_i = get_AS(i, nodes, node_ases, file_logger)
+            AS_i = get_AS(i, nodes, self.node_ases)
             if AS_i is None:
-                without_AS += 1
+                with self.lock:
+                    self.without_AS += 1
                 continue
             for j in range((i + 1), n_nodes):
-                AS_j = get_AS(j, nodes, node_ases, file_logger)
+                AS_j = get_AS(j, nodes, self.node_ases)
                 if AS_j is None:
-                    without_AS += 1
+                    with self.lock:
+                        self.without_AS += 1
                     continue
                 if AS_i == AS_j:
-                    add_to_links(nodes[i], nodes[j], links, count_links, AS_i)
-                    intra_AS += 1
+                    with self.lock:
+                        add_to_links(
+                            nodes[i],
+                            nodes[j],
+                            self.links,
+                            self.count_links,
+                            AS_i,
+                        )
+                        self.intra_AS += 1
                 else:
-                    add_to_links(
-                        nodes[i], nodes[j], links, count_links, "edge_links"
-                    )
-                    inter_AS += 1
-    for AS, text in links.items():
+                    with self.lock:
+                        add_to_links(
+                            nodes[i],
+                            nodes[j],
+                            self.links,
+                            self.count_links,
+                            "edge_links",
+                        )
+                        self.inter_AS += 1
+
+    def write_file(self, AS, text):
         with open("data/links/{}.csv".format(AS), "a") as f:
             f.write(text)
+
+
+def save_links_for_ases(node_ases, node_links, file_logger):
+    parser = LinkParser(node_ases)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=6) as executor:
+        for nodes in node_links:
+            executor.submit(parser.parse_link, nodes)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=6) as executor:
+        for AS, text in parser.links.items():
+            executor.submit(parser.write_file, AS, text)
     msg = (
-        "Links were saved, where: {} were ignored,".format(without_AS)
-        + " {} were inter AS".format(inter_AS)
-        + " {} were intra AS".format(intra_AS)
+        "Links were saved, where: {} were ignored,".format(parser.without_AS)
+        + " {} were inter AS".format(parser.inter_AS)
+        + " {} were intra AS".format(parser.intra_AS)
     )
     file_logger.info(msg)
-    return count_links
+    return parser.count_links
 
 
 def extract_links_for_ases(link_path, geo_ases_path):
@@ -98,7 +128,7 @@ def extract_links_for_ases(link_path, geo_ases_path):
         msg = "The directory {} is not empty.".format(root_dir)
         file_logger.error(msg)
         raise IOError(msg)
-    node_ases = pd.read_hdf(geo_ases_path, "pandas", columns=["id", "ases"])
+    node_ases = pd.read_hdf(geo_ases_path, "geo", columns=["id", "ases"])
     node_ases.set_index("id", inplace=True)
     node_ases = node_ases.to_dict()["ases"]
     file_logger.info(
@@ -123,57 +153,3 @@ def extract_links_for_ases(link_path, geo_ases_path):
         columns=["AS", "Nlinks"],
     )
     df.to_csv("data/link_count.csv")
-
-
-def get_neighborhood_from_link(line):
-    neighborhood = []
-    splited_line = re.split(r"\s", line)
-    node = splited_line[3].split(":")[0]
-    for raw_node in splited_line[4:-2]:
-        neighborhood.append(raw_node.split(":")[0])
-    return node, neighborhood
-
-
-def save_links(links, root_dir):
-    for node, neighborhood in links.items():
-        with gzip.GzipFile(
-            os.path.join(root_dir, node + ".txt.gz"), "ab"
-        ) as file:
-            content = ""
-            for neighbor in neighborhood:
-                content += neighbor + "\n"
-            file.write(content.encode())
-
-
-def save_links_to_files(link_path):
-    links = {}
-    root_dir = "data/links/"
-    counter = Counter("Processed Links ")
-    file_logger = create_logger("link.log")
-    os.makedirs(root_dir, exist_ok=True)
-    if not is_empty(root_dir):
-        msg = "The directory {} is not empty.".format(root_dir)
-        file_logger.error(msg)
-        raise IOError(msg)
-    file_logger.info(
-        "Start the link extraction from {}".format(os.path.abspath(link_path))
-    )
-    with open(link_path, "r") as f:
-        for line in f:
-            if line[0] != "#":
-                node, neighborhood = get_neighborhood_from_link(line)
-                if node in links:
-                    links[node] += neighborhood
-                else:
-                    links[node] = neighborhood
-                if len(links) == 1000:
-                    save_links(links, root_dir)
-                    links = {}
-                counter.next()
-    if len(links) > 0:
-        save_links(links, root_dir)
-    file_logger.info(
-        "The links was extracted and saved in {}".format(
-            os.path.abspath(root_dir)
-        )
-    )
