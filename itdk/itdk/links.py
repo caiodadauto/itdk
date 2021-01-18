@@ -1,6 +1,5 @@
 import os
 import re
-import gzip
 
 import threading
 import concurrent.futures
@@ -17,12 +16,18 @@ def is_empty(root_dir):
     return len(files) == 0
 
 
-def get_nodes_from_link(line):
+def get_inter_nodes_from_link(line):
     nodes = []
+    interfaces = []
     splited_line = re.split(r"\s+", line)
     for raw_node in splited_line[2:-1]:
         nodes.append(raw_node.split(":")[0])
-    return nodes
+        if len(raw_node.split(":")) == 1:
+            interfaces.append("")
+        else:
+            interfaces.append(raw_node.split(":")[1])
+
+    return nodes, interfaces
 
 
 def get_AS(idx, nodes, node_ases):
@@ -34,11 +39,11 @@ def get_AS(idx, nodes, node_ases):
     return AS
 
 
-def add_to_links(n1, n2, links, count_links, AS_name):
+def add_to_links(n1, n2, i1, i2, links, count_links, AS_name):
     if AS_name not in links:
         links[AS_name] = ""
         count_links[AS_name] = 0
-    links[AS_name] += "{},{}\n".format(n1, n2)
+    links[AS_name] += "{},{},{},{}\n".format(n1, n2, i1, i2)
     count_links[AS_name] += 1
 
 
@@ -60,7 +65,8 @@ class LinkParser:
         self.node_ases = node_ases
         self.lock = threading.Lock()
 
-    def parse_link(self, nodes):
+    def parse_link(self, inter_nodes):
+        nodes, interfaces = inter_nodes
         n_nodes = len(nodes)
         for i in range(n_nodes):
             AS_i = get_AS(i, nodes, self.node_ases)
@@ -79,6 +85,8 @@ class LinkParser:
                         add_to_links(
                             nodes[i],
                             nodes[j],
+                            interfaces[i],
+                            interfaces[j],
                             self.links,
                             self.count_links,
                             AS_i,
@@ -89,6 +97,8 @@ class LinkParser:
                         add_to_links(
                             nodes[i],
                             nodes[j],
+                            interfaces[i],
+                            interfaces[j],
                             self.links,
                             self.count_links,
                             "edge_links",
@@ -100,11 +110,11 @@ class LinkParser:
             f.write(text)
 
 
-def save_links_for_ases(node_ases, node_links, file_logger):
+def save_links_for_ases(node_ases, inter_node_links, file_logger):
     parser = LinkParser(node_ases)
     with concurrent.futures.ThreadPoolExecutor(max_workers=6) as executor:
-        for nodes in node_links:
-            executor.submit(parser.parse_link, nodes)
+        for inter_nodes in inter_node_links:
+            executor.submit(parser.parse_link, inter_nodes)
     with concurrent.futures.ThreadPoolExecutor(max_workers=6) as executor:
         for AS, text in parser.links.items():
             executor.submit(parser.write_file, AS, text)
@@ -118,7 +128,7 @@ def save_links_for_ases(node_ases, node_links, file_logger):
 
 
 def extract_links_for_ases(link_path, geo_ases_path):
-    node_links = []
+    inter_node_links = []
     count_links = {}
     root_dir = "data/links"
     counter = Counter("Processed Links ")
@@ -137,15 +147,15 @@ def extract_links_for_ases(link_path, geo_ases_path):
     with open(link_path, "r") as file:
         for line in file:
             if line[0] != "#":
-                node_links.append(get_nodes_from_link(line))
-                if len(node_links) == 10000:
+                inter_node_links.append(get_inter_nodes_from_link(line))
+                if len(inter_node_links) == 10000:
                     partial_count = save_links_for_ases(
-                        node_ases, node_links, file_logger
+                        node_ases, inter_node_links, file_logger
                     )
                     merge_dict(partial_count, count_links)
-                    node_links = []
+                    inter_node_links = []
             counter.next()
-    partial_count = save_links_for_ases(node_ases, node_links, file_logger)
+    partial_count = save_links_for_ases(node_ases, inter_node_links, file_logger)
     merge_dict(partial_count, count_links)
     file_logger.info("The extraction is done.")
     df = pd.DataFrame(
