@@ -1,9 +1,13 @@
 import os
 import re
+import threading
+import concurrent.futures
 
 import numpy as np
 import pandas as pd
 from progress.counter import Counter
+
+from itdk.logger import create_logger
 
 
 def get_all_AS(file_path):
@@ -27,80 +31,159 @@ def save_ASes(ASes, file_path):
 
 
 def get_unique_index(node_locations):
-    labels = {}
-    max_count = 0
     n_combination = 1
     X = node_locations[["latitude", "longitude"]].values
-    v, index, inverse_idx = np.unique(
+    _, index, inverse_idx = np.unique(
         X, axis=0, return_index=True, return_inverse=True
     )
-    for label in range(len(index)):
+    n_labels = len(index)
+    counts = np.zeros(n_labels)
+    labels = np.arange(0, n_labels, 1)
+    for label in labels:
         c = (inverse_idx == label).sum()
-        labels[label] = c
-        if c > max_count:
-            max_count = c
+        counts[label] = c
         n_combination *= c
-    return inverse_idx, labels, max_count, n_combination
+    return inverse_idx, labels, counts, n_combination
 
 
-def get_nodes_per_location(node_locations):
-    nodes = []
-    inverse_index, labels, max_count, n_combination = get_unique_index(
-        node_locations
+def cartesian(nodes, n=None, out=None):
+    dtype = nodes[0].dtype
+
+    if n is None:
+        n = np.prod([x.size for x in nodes])
+    if out is None:
+        out = np.zeros([n, len(nodes)], dtype=dtype)
+
+    m = n // nodes[0].size
+    out[:, 0] = np.repeat(nodes[0], m)
+    if nodes[1:]:
+        cartesian(nodes[1:], out=out[0:m, 1:])
+        for j in range(1, nodes[0].size):
+            out[j * m : (j + 1) * m, 1:] = out[0:m, 1:]
+    return out
+
+
+def create_indices(counts, n_topology, max_attempt=3, seed=12345):
+    attempt = 0
+    rng = np.random.default_rng(seed)
+    max_bounds = np.repeat(counts.reshape(1, -1), n_topology, axis=0)
+    topology_indices = rng.integers(
+        np.zeros(len(counts)), max_bounds, dtype=np.uint32
     )
-    for label, n_labels in labels.item():
+    unique_topology_indices = np.unique(topology_indices, axis=0)
+    n_unique_topology = len(unique_topology_indices)
+    while n_unique_topology < n_topology:
+        print(n_topology - n_unique_topology)
+        if attempt > max_attempt:
+            break
+        max_bounds = np.repeat(
+            counts.reshape(1, -1), n_topology - n_unique_topology, axis=0
+        )
+        topology_indices = rng.integers(
+            np.zeros(len(counts)), max_bounds, dtype=np.uint32
+        )
+        topology_indices = np.concatenate(
+            [unique_topology_indices, topology_indices], axis=0
+        )
+        unique_topology_indices = np.unique(topology_indices, axis=0)
+        n_unique_topology = len(unique_topology_indices)
+        attempt += 1
+    return unique_topology_indices
+
+
+def get_node_id(node_locations, labels, inverse_index):
+    nodes = []
+    for label in labels:
         mask = inverse_index == label
         node_indices = node_locations.iloc[mask, 0].values.astype("<U10")
-        if n_labels < max_count:
-            extra_indices = np.random.choice(
-                node_indices, max_count - n_labels
-            )
-            node_indices = np.concatenate(
-                [node_indices, extra_indices], axis=0
-            )
         nodes.append(node_indices)
-    return np.array(nodes).T, n_combination
+    return nodes
 
 
-def save_unique_groups(nodes, n_comobination, root, as_name, ratio=.4):
-    def has_equal_topology(groups):
-        if len(groups) == 0:
-            return False
-        last_group = groups[-1]
-        for g in groups[:-1]:
-            for line in last_group:
-                if np.any(np.all(g == line, axis=1)):
-                    return True
-        return False
-
-    dir_name = os.path.join(root, as_name)
-    os.makedirs(dir_name, exist_ok=True)
-    groups = []
-    rng = np.random.default_rng()
-    n_groups = int(np.ceil(n_comobination * ratio))
-    for _ in range(n_groups):
-        while(has_equal_topology(groups)):
-            g = rng.permutation(nodes, axis=0)
-        groups.append(g)
-    groups = np.concatenate(groups, axis=0)
-    for topology in groups:
-        with open(os.path.join(dir_name, "{}.csv"), 'w') as f:
-            text = ""
-            for node in topology:
-                text += "{}\n".format(node)
-            f.write(text)
+def get_text_topology_from_arr(topology_arr):
+    text_topology = ""
+    for top in topology_arr:
+        for n in top[:-1]:
+            text_topology += "{},".format(n)
+        text_topology += "{}\n".format(top[-1])
+    return text_topology
 
 
-def group_nodes_with_unique_locations(geo_ases_path):
-    root = os.path.join("data", "unique_noddes_per_ases")
-    os.makedirs(root, exist_ok=True)
-    ases = pd.read_hdf(geo_ases_path, "ases").values.squeeze()
-    for as_name in ases:
-        node_locations = pd.read_hdf(
-            geo_ases_path,
-            "geo",
-            columns=["id", "latitude", "longitude"],
-            where=["ases=={}".format(as_name)],
+def get_text_topology_from_indices(topology_indices, nodes):
+    text_topology = ""
+    for top_idx in topology_indices:
+        for i, idx in enumerate(top_idx[:-1]):
+            text_topology += "{},".format(nodes[i][idx])
+        text_topology += "{}\n".format(nodes[len(top_idx) - 1][top_idx[-1]])
+    return text_topology
+
+
+def save_info(as_name, n_nodes, n_unique_nodes):
+    with open(os.path.join("data", "unique_nodes.csv"), "a") as f:
+        f.write("{},{},{}\n".format(as_name, n_nodes, n_unique_nodes))
+
+
+class Extractor:
+    def __init__(self):
+        self._lock = threading.Lock()
+
+    def get_text_topology(
+        self, as_name, node_locations, file_logger, base=1000000
+    ):
+        inverse_index, labels, counts, n_combination = get_unique_index(
+            node_locations
         )
-        nodes, n_combination = get_nodes_per_location(node_locations)
-        save_unique_groups(nodes, n_combination, as_name)
+        with self._lock:
+            save_info(as_name, len(inverse_index), len(labels))
+        nodes = get_node_id(node_locations, labels, inverse_index)
+        if n_combination != 0 and n_combination <= 2 * base:
+            topology_arr = cartesian(nodes, n_combination)
+            text_topology = get_text_topology_from_arr(topology_arr)
+            with self._lock:
+                file_logger.info(
+                    "AS {} done, using cartesian with size {}".format(
+                        as_name, n_combination
+                    )
+                )
+        else:
+            n_topology = base
+            topology_indices = create_indices(counts, n_topology)
+            text_topology = get_text_topology_from_indices(
+                topology_indices, nodes
+            )
+            with self._lock:
+                file_logger.info(
+                    "AS {} done, using random selection with size {}"
+                    " for {} possible combinations".format(
+                        as_name, topology_indices.shape[0], n_combination
+                    )
+                )
+        return text_topology
+
+    def extract(self, as_name, root, node_locations, file_logger):
+        text_topology = self.get_text_topology(
+            as_name, node_locations, file_logger
+        )
+        with open(os.path.join(root, "{}.csv".format(as_name)), "w") as f:
+            f.write(text_topology)
+
+
+def extract_topo_from_unique_positions(geo_ases_path):
+    file_logger = create_logger("ases.log")
+    root = os.path.join("data", "unique_nodes_per_ases")
+    os.makedirs(root, exist_ok=True)
+    extractor = Extractor()
+    ases = pd.read_hdf(geo_ases_path, "ases").values.squeeze()
+    with concurrent.futures.ThreadPoolExecutor(max_workers=6) as executor:
+        for as_name in ases:
+            node_locations = pd.read_hdf(
+                geo_ases_path,
+                "geo",
+                columns=["id", "latitude", "longitude"],
+                where=["ases=='{}'".format(as_name)],
+            )
+            if node_locations.shape[0] == 0:
+                continue
+            executor.submit(
+                extractor.extract, as_name, root, node_locations, file_logger
+            )
