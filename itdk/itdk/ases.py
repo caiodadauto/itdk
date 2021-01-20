@@ -63,7 +63,7 @@ def cartesian(nodes, n=None, out=None):
     return out
 
 
-def create_indices(counts, n_topology, max_attempt=3, seed=12345):
+def create_indices(counts, n_topology, max_attempt=10, seed=12345):
     attempt = 0
     rng = np.random.default_rng(seed)
     max_bounds = np.repeat(counts.reshape(1, -1), n_topology, axis=0)
@@ -73,7 +73,6 @@ def create_indices(counts, n_topology, max_attempt=3, seed=12345):
     unique_topology_indices = np.unique(topology_indices, axis=0)
     n_unique_topology = len(unique_topology_indices)
     while n_unique_topology < n_topology:
-        print(n_topology - n_unique_topology)
         if attempt > max_attempt:
             break
         max_bounds = np.repeat(
@@ -174,7 +173,7 @@ def extract_topo_from_unique_positions(geo_ases_path):
     os.makedirs(root, exist_ok=True)
     extractor = Extractor()
     ases = pd.read_hdf(geo_ases_path, "ases").values.squeeze()
-    with concurrent.futures.ThreadPoolExecutor(max_workers=6) as executor:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
         for as_name in ases:
             node_locations = pd.read_hdf(
                 geo_ases_path,
