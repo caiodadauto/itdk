@@ -5,6 +5,7 @@ from itdk import utils
 
 def run(path_to_ases_nums, path_to_draw):
     utils.get_dist_nodes(path_to_ases_nums, path_to_draw)
+    utils.get_ases_contributions(path_to_ases_nums, path_to_draw)
 
 if __name__ == "__main__":
     p = argparse.ArgumentParser()
