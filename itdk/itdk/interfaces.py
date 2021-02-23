@@ -16,19 +16,36 @@ def search_query(ids):
     return query
 
 
-def save_interfaces(data, node_as_path, dirpath):
+def save_interfaces(data, node_as_path, dirpath, file_logger):
     df = pd.DataFrame(data, columns=["addrs", "id"])
-    df.sort_values("id")
+    df.sort_values("id", inplace=True)
     query = search_query(np.unique(df["id"].values))
     node_as = pd.read_hdf(node_as_path, "geo", columns=["id", "ases"], where=query)
-    node_as.sort_values("id")
+    node_as.sort_values("id", inplace=True)
+    if node_as.shape[0] < df.shape[0]:
+        size = node_as.shape[0]
+        indices = node_as["id"].searchsorted(df["id"])
+
+        mask = indices < size
+        discarted_nodes = df["id"].loc[~mask].values
+        df = df.loc[mask]
+        indices = indices[mask]
+
+        mask = node_as["id"].iloc[indices].values == df["id"].values
+        discarted_nodes = np.concatenate([discarted_nodes, df["id"].loc[~mask].values])
+        df = df.loc[mask]
+        indices = indices[mask]
+        node_as = node_as.iloc[indices]
+        if discarted_nodes.size != 0:
+            file_logger.info(
+                    "Node(s) {} without geolocation".format(discarted_nodes))
     ases = node_as["ases"].values
-    df["as"] = ases
+    df = df.assign(ases=ases)
     as_names = np.unique(ases)
     for as_name in as_names:
         file_path = os.path.join(dirpath, "{}.csv".format(as_name))
-        as_df = df.loc[df["as"] == as_name, ("addrs", "id", "as")]
-        as_df.to_csv(file_path, index=False, mode="a")
+        as_df = df.loc[df["ases"] == as_name, ("addrs", "id")]
+        as_df.to_csv(file_path, header=False, index=False, mode="a")
 
 
 def process(inter_path, file_logger, node_as_path, dirpath, buffer_size=30):
@@ -45,12 +62,12 @@ def process(inter_path, file_logger, node_as_path, dirpath, buffer_size=30):
                     data[saved_lines] = splited_line[:2]
                     saved_lines += 1
                     if saved_lines % buffer_size == 0:
-                        save_interfaces(data, node_as_path, dirpath)
-                        data = np.zeros((buffer_size, 2))
+                        save_interfaces(data, node_as_path, dirpath, file_logger)
+                        data = np.zeros((buffer_size, 2), dtype='<U15')
                         saved_lines = 0
             counter.next()
     if saved_lines > 0:
-        save_interfaces(data, node_as_path, dirpath)
+        save_interfaces(data, node_as_path, dirpath, file_logger)
 
 
 def parse_interfaces(inter_path, node_as_path, dirname):
