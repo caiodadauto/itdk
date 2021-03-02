@@ -16,11 +16,10 @@ def search_query(ids):
     return query
 
 
-def save_interfaces(data, node_as_path, dirpath, file_logger):
+def save_interfaces(data, all_node_as, dirpath, file_logger):
     df = pd.DataFrame(data, columns=["addrs", "id"])
     df.sort_values("id", inplace=True)
-    query = search_query(np.unique(df["id"].values))
-    node_as = pd.read_hdf(node_as_path, "geo", columns=["id", "ases"], where=query)
+    node_as = all_node_as.loc[np.unique(df["id"].values)]
     node_as.sort_values("id", inplace=True)
     if node_as.shape[0] < df.shape[0]:
         size = node_as.shape[0]
@@ -48,7 +47,7 @@ def save_interfaces(data, node_as_path, dirpath, file_logger):
         as_df.to_csv(file_path, header=False, index=False, mode="a")
 
 
-def process(inter_path, file_logger, node_as_path, dirpath, buffer_size=30):
+def process(inter_path, file_logger, node_as_path, dirpath, node_as, buffer_size=500000):
     data = np.zeros((buffer_size, 2), dtype='<U15')
     regular = re.compile(r"N+\d")
     counter = Counter("Processed Interfaces ")
@@ -62,16 +61,18 @@ def process(inter_path, file_logger, node_as_path, dirpath, buffer_size=30):
                     data[saved_lines] = splited_line[:2]
                     saved_lines += 1
                     if saved_lines % buffer_size == 0:
-                        save_interfaces(data, node_as_path, dirpath, file_logger)
+                        save_interfaces(data, node_as, dirpath, file_logger)
                         data = np.zeros((buffer_size, 2), dtype='<U15')
                         saved_lines = 0
             counter.next()
     if saved_lines > 0:
-        save_interfaces(data, node_as_path, dirpath, file_logger)
+        save_interfaces(data, node_as, dirpath, file_logger)
 
 
 def parse_interfaces(inter_path, node_as_path, dirname):
     dirpath = os.path.join("data", dirname)
     os.makedirs(dirpath)
     file_logger = create_logger("interfaces.log")
-    process(inter_path, file_logger, node_as_path, dirpath)
+    node_as = pd.read_hdf(node_as_path, "geo", columns=["id", "ases"])
+    node_as.set_index("id", inplace=True)
+    process(inter_path, file_logger, node_as_path, dirpath, node_as)
