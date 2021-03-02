@@ -17,34 +17,23 @@ def search_query(ids):
 
 
 def save_interfaces(data, all_node_as, dirpath, file_logger):
+    discarted_nodes = []
     df = pd.DataFrame(data, columns=["addrs", "id"])
     df.sort_values("id", inplace=True)
-    node_as = all_node_as.loc[np.unique(df["id"].values)]
-    node_as.sort_values("id", inplace=True)
-    if node_as.shape[0] < df.shape[0]:
-        size = node_as.shape[0]
-        indices = node_as["id"].searchsorted(df["id"])
-
-        mask = indices < size
-        discarted_nodes = df["id"].loc[~mask].values
-        df = df.loc[mask]
-        indices = indices[mask]
-
-        mask = node_as["id"].iloc[indices].values == df["id"].values
-        discarted_nodes = np.concatenate([discarted_nodes, df["id"].loc[~mask].values])
-        df = df.loc[mask]
-        indices = indices[mask]
-        node_as = node_as.iloc[indices]
-        if discarted_nodes.size != 0:
-            file_logger.info(
-                    "Node(s) {} without geolocation".format(discarted_nodes))
-    ases = node_as["ases"].values
-    df = df.assign(ases=ases)
-    as_names = np.unique(ases)
-    for as_name in as_names:
-        file_path = os.path.join(dirpath, "{}.csv".format(as_name))
-        as_df = df.loc[df["ases"] == as_name, ("addrs", "id")]
-        as_df.to_csv(file_path, header=False, index=False, mode="a")
+    node_ids = np.unique(df["id"].values)
+    for node_id in node_ids:
+        try:
+            ases = all_node_as.loc[node_id].values
+        except KeyError:
+            discarted_nodes += node_id
+            continue
+        node_interfaces = df.loc[df["id"] == node_id]
+        for as_name in ases:
+            file_path = os.path.join(dirpath, "{}.csv".format(as_name))
+            node_interfaces.to_csv(file_path, header=False, index=False, mode="a")
+    if discarted_nodes.size != 0:
+        file_logger.info(
+                "Node(s) {} without geolocation".format(discarted_nodes))
 
 
 def process(inter_path, file_logger, node_as_path, dirpath, node_as, buffer_size=500000):
