@@ -31,7 +31,7 @@ def save_interfaces(data, all_node_as, dirpath, file_logger):
         for as_name in ases:
             file_path = os.path.join(dirpath, "{}.csv".format(as_name))
             node_interfaces.to_csv(file_path, header=False, index=False, mode="a")
-    if discarted_nodes.size != 0:
+    if len(discarted_nodes) != 0:
         file_logger.info(
                 "Node(s) {} without geolocation".format(discarted_nodes))
 
