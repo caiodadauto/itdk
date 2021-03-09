@@ -56,9 +56,7 @@ def information_from_as(geo_path, links_path, interfaces_path, as_name):
 def get_edges(nodes, links, labels):
     nodes["labels"] = labels
     nodes = nodes.set_index("id")
-    link_labels = links.loc[:, ("n1", "n2")].applymap(
-        lambda s: nodes.loc[s, "labels"]
-    )
+    link_labels = links.loc[:, ("n1", "n2")].applymap(lambda s: nodes.loc[s, "labels"])
     links["label1"] = link_labels["n1"]
     links["label2"] = link_labels["n2"]
     links = links.set_index(["n1", "n2"])
@@ -71,23 +69,25 @@ def get_edges(nodes, links, labels):
 
 def get_interfaces(nodes, interfaces):
     def to_binary(addrs):
-        binary_interfaces = np.zeros((len(addrs), 32), dtype=np.int8)
+        binary_interfaces = np.zeros((4, 8, len(addrs)), dtype=np.int8)
         for i, str_ip in enumerate(addrs):
             str_ip = str_ip.split(".")
             int_ip = np.array(list(map(lambda s: int(s), str_ip)))
-            binary_ip = ((int_ip.reshape(-1, 1) & (1 << np.arange(8))) > 0).astype(np.int8)
-            binary_interfaces[i] = binary_ip.flatten()
+            binary_ip = np.fliplr(
+                ((int_ip.reshape(-1, 1) & (1 << np.arange(8))) > 0).astype(np.int8)
+            )
+            binary_interfaces[:, :, i] = binary_ip
         return binary_interfaces
 
     node_ids = nodes["id"]
-    interfaces_of_nodes = []
+    interfaces_of_nodes = {}
     for node_id in node_ids:
         node_addrs = interfaces.loc[interfaces["id"] == node_id, "addrs"].values
-        interfaces_of_nodes.append(to_binary(node_addrs))
+        interfaces_of_nodes[node_id] = to_binary(node_addrs)
     return interfaces_of_nodes
 
 
-def extract_graphs_from_joining_nodes(
+def extract_graphs(
     geo_path,
     links_path,
     interfaces_path,
@@ -126,7 +126,7 @@ def extract_graphs_from_joining_nodes(
         if nodes.shape[0] < 20:
             small_ases += 1
             continue
-        
+
         links_non_loops_multi = get_edges(node_locations, links, labels)
         interfaces_of_nodes = get_interfaces(node_locations, interfaces)
 
@@ -165,7 +165,7 @@ def create_graphs_from_ases(geo_path, links_path, interfaces_path, add_noise=Tru
     assets_path = os.path.join("data", "draws")
     os.makedirs(assets_path, exist_ok=True)
     file_logger = create_logger("graphs.log")
-    extract_graphs_from_joining_nodes(
+    extract_graphs(
         geo_path, links_path, interfaces_path, assets_path, file_logger, add_noise
     )
 
