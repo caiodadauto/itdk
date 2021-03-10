@@ -41,6 +41,7 @@ def parse_links(nodes, links):
         except KeyError:
             return -1
 
+    links = links.copy()
     nodes = nodes.set_index("id")
     link_labels = links.loc[:, ("n1", "n2")].applymap(to_label)
     links["label1"] = link_labels["n1"]
@@ -71,16 +72,17 @@ def parse_interfaces(nodes, interfaces):
     interfaces_of_nodes = []
     for node_id in node_ids:
         node_addrs = interfaces.loc[interfaces["id"] == node_id, "addrs"].values
-        interfaces_of_nodes += to_binary(node_addrs)
+        interfaces_of_nodes.append(to_binary(node_addrs))
     return interfaces_of_nodes
 
 
 def create_graphs(locations, edges, interfaces, graph_path):
-    G = gt.Graph(directed=False)
-    G.add_vertex(locations.size)
-    G.vp.pos = G.new_vp("vector<float>", vals=locations)
-    G.vp.pos = G.new_vp("object", vals=interfaces)
-    G.add_edge_list(edges)
+    g = gt.Graph(directed=False)
+    g.add_vertex(locations.size)
+    g.vp.pos = g.new_vp("vector<float>", vals=locations)
+    g.vp.pos = g.new_vp("object", vals=interfaces)
+    g.add_edge_list(edges)
+    g.save(graph_path)
 
 
 def extract_graphs(
@@ -123,10 +125,10 @@ def extract_graphs(
         node_locations = node_locations.sort_values(by=["labels"])
         links_non_loops_multi = parse_links(node_locations, links)
 
-        edges = links.loc[:, ("label1", "label2")].values
+        edges = links_non_loops_multi.loc[:, ("label1", "label2")].values
         locations = node_locations.loc[:, ("latitude", "longitude")].values
         interfaces_of_nodes = parse_interfaces(node_locations, interfaces)
-        graph_path = os.path.join(root_path, "{}".format(as_name))
+        graph_path = os.path.join(root_path, "{}.gt.xz".format(as_name))
         create_graphs(locations, edges, interfaces_of_nodes, graph_path)
 
         n_nodes = nodes.shape[0]
@@ -138,18 +140,19 @@ def extract_graphs(
                 as_name, n_nodes, all_n_nodes, n_links, all_n_links
             )
         )
-        file_logger.info(
-            "{} ASes do not present at least {} distinguish geolocated nodes;"
-            "{} ASes do not have geolocated nodes; "
-            "{} ASes do not have links; "
-            "{} ASes do not have interfaces".format(
-                small_ases,
-                minimum_nodes,
-                empty_ases,
-                non_link_ases,
-                non_interfaces_ases,
-            )
+        break
+    file_logger.info(
+        "{} ASes do not present at least {} distinguish geolocated nodes;"
+        "{} ASes do not have geolocated nodes; "
+        "{} ASes do not have links; "
+        "{} ASes do not have interfaces".format(
+            small_ases,
+            minimum_nodes,
+            empty_ases,
+            non_link_ases,
+            non_interfaces_ases,
         )
+    )
 
 
 def create_graphs_from_ases(geo_path, links_path, interfaces_path, add_noise=True):
