@@ -5,10 +5,18 @@ import pandas as pd
 import graph_tool as gt
 
 from itdk.logger import create_logger
-from itdk.ases import get_unique_index
+from itdk.utils import get_unique_index
 
 
-def information_from_as(geo_path, links_path, interfaces_path, as_name):
+def check_coords(coordinates):
+    if np.any((coordinates > 2) | (coordinates < 0)):
+        raise ValueError(
+            "Latitude or longitude are out"
+            " of bound (latitude: [-90, 90] and longitude: [-180, 180])"
+        )
+
+
+def information_from_as(geo_path, links_path, interfaces_path, as_name, scale=True):
     as_interfaces_path = os.path.join(interfaces_path, as_name + ".csv")
     as_links_path = os.path.join(links_path, as_name + ".csv")
     node_locations = pd.read_hdf(
@@ -17,6 +25,11 @@ def information_from_as(geo_path, links_path, interfaces_path, as_name):
         columns=["id", "latitude", "longitude"],
         where=["ases=='{}'".format(as_name)],
     )
+    if scale:
+        degree_locations = node_locations.loc[:, ("latitude", "longitude")].values
+        node_locations.loc[:, "latitude"] = (degree_locations[:, 0] / 90) + 1
+        node_locations.loc[:, "longitude"] = (degree_locations[:, 1] / 180) + 1
+        check_coords(node_locations.loc[:, ("latitude", "longitude")])
     if node_locations.shape[0] == 0:
         return -1
     try:
@@ -116,7 +129,8 @@ def extract_graphs(
         noised_X, labels, nodes, _, _ = get_unique_index(X, add_noise=True)
         node_locations.loc[:, ("latitude", "longitude")] = noised_X
         node_locations["labels"] = labels
-        if nodes.shape[0] < 20:
+        check_coords(noised_X)
+        if nodes.shape[0] < minimum_nodes:
             small_ases += 1
             continue
 
@@ -155,10 +169,10 @@ def extract_graphs(
     )
 
 
-def create_graphs_from_ases(geo_path, links_path, interfaces_path, add_noise=True):
+def create_graphs_from_ases(geo_path, links_path, interfaces_path):
     root_path = os.path.join("data", "graphs")
     os.makedirs(root_path, exist_ok=True)
     file_logger = create_logger("graphs.log")
     extract_graphs(
-        geo_path, links_path, interfaces_path, root_path, file_logger, add_noise
+        geo_path, links_path, interfaces_path, root_path, file_logger
     )

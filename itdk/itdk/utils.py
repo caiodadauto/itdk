@@ -7,6 +7,54 @@ import matplotlib.pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
 
 
+# @jit(nopython=True)
+def noised_location(X, inverse_idx, counts, mean, std, bound, seed=12345):
+    k = 0
+    counts = counts.copy()
+    noised_X = np.zeros_like(X)
+    rng = np.random.default_rng(12345)
+    noise = rng.normal(loc=mean, scale=std, size=(counts[counts != 1].sum(), 2))
+    for i, l in enumerate(inverse_idx):
+        x = X[i].copy()
+        if counts[l] == 1:
+            noised_X[i] = x
+        else:
+            k += 1
+            counts[l] -= 1
+            new_x = x + x * noise[k]
+            delta = bound[1] - bound[0]
+            up_cmp = new_x > bound[1]
+            down_cmp = new_x < bound[0]
+            if np.any(up_cmp):
+                eps = new_x[up_cmp] - bound[1]
+                new_x[up_cmp] -= eps + rng.uniform(size=up_cmp.sum()) * delta
+            elif np.any(down_cmp):
+                eps = bound[0] - new_x[down_cmp]
+                new_x[down_cmp] += eps + rng.uniform(size=down_cmp.sum()) * delta
+            noised_X[i] = new_x
+    return noised_X
+
+
+def get_unique_index(X, add_noise=False, mean=0, std=0.8, bound=[0, 2]):
+    n_combination = 1
+    if add_noise:
+        _, index, inverse_idx, counts = np.unique(
+            X, axis=0, return_index=True, return_inverse=True, return_counts=True
+        )
+        X = noised_location(X, inverse_idx, counts, mean, std, bound)
+    _, index, inverse_idx = np.unique(X, axis=0, return_index=True, return_inverse=True)
+    n_labels = len(index)
+    counts = np.zeros(n_labels)
+    labels = np.arange(0, n_labels, 1)
+    for label in labels:
+        c = (inverse_idx == label).sum()
+        counts[label] = c
+        n_combination *= c
+    if add_noise:
+        return X, inverse_idx, labels, counts, n_combination
+    return inverse_idx, labels, counts, n_combination
+
+
 def get_graph_samples(df_slice, key_col="Num of Nodes"):
     si = 0
     num_of_top = df_slice["Num of Topologies"].values
