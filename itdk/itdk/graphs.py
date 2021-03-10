@@ -3,6 +3,7 @@ import os
 import numpy as np
 import pandas as pd
 import graph_tool as gt
+from numba import jit, float64, int64
 
 from itdk.logger import create_logger
 from itdk.utils import get_unique_index
@@ -89,12 +90,23 @@ def parse_interfaces(nodes, interfaces):
     return interfaces_of_nodes
 
 
-def create_graphs(locations, edges, interfaces, graph_path):
+@jit(float64[:](int64[:,:], float64[:,:]))
+def get_edge_weights(edges, locations):
+    size = edges.shape[0]
+    weights = np.zeros(edges.shape[0])
+    for i in range(size):
+        p, s = edges[i]
+        weights[i] = np.linalg.norm(locations[p] - locations[s])
+    return weights
+
+
+def create_graphs(locations, interfaces, edges, edge_weights, graph_path):
     g = gt.Graph(directed=False)
-    g.add_vertex(locations.size)
+    g.add_vertex(locations.shape[0])
     g.vp.pos = g.new_vp("vector<float>", vals=locations)
     g.vp.pos = g.new_vp("object", vals=interfaces)
     g.add_edge_list(edges)
+    g.ep.weight = g.new_ep("float", vals=edge_weights)
     g.save(graph_path)
 
 
@@ -141,9 +153,10 @@ def extract_graphs(
 
         edges = links_non_loops_multi.loc[:, ("label1", "label2")].values
         locations = node_locations.loc[:, ("latitude", "longitude")].values
+        edge_weights = get_edge_weights(edges, locations)
         interfaces_of_nodes = parse_interfaces(node_locations, interfaces)
         graph_path = os.path.join(root_path, "{}.gt.xz".format(as_name))
-        create_graphs(locations, edges, interfaces_of_nodes, graph_path)
+        create_graphs(locations, interfaces_of_nodes, edges, edge_weights, graph_path)
 
         n_nodes = nodes.shape[0]
         all_n_nodes = labels.shape[0]
@@ -154,7 +167,6 @@ def extract_graphs(
                 as_name, n_nodes, all_n_nodes, n_links, all_n_links
             )
         )
-        break
     file_logger.info(
         "{} ASes do not present at least {} distinguish geolocated nodes;"
         "{} ASes do not have geolocated nodes; "
