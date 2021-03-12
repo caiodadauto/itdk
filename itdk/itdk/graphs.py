@@ -43,6 +43,7 @@ def information_from_as(geo_path, links_path, interfaces_path, as_name, scale=Tr
             as_interfaces_path, index_col=False, header=None, dtype=str
         )
         interfaces_df.columns = ["addrs", "id"]
+        interfaces_df = interfaces_df.set_index("id")
     except FileNotFoundError:
         return -3
     return node_locations, links_df, interfaces_df
@@ -70,7 +71,7 @@ def parse_links(nodes, links):
     return links_non_loops_multi
 
 
-def parse_interfaces(nodes, interfaces):
+def parse_interfaces(nodes, interfaces, as_name, file_logger):
     def to_binary(addrs):
         binary_interfaces = np.zeros((4, 8, len(addrs)), dtype=np.int8)
         for i, str_ip in enumerate(addrs):
@@ -85,12 +86,16 @@ def parse_interfaces(nodes, interfaces):
     node_ids = nodes["id"]
     interfaces_of_nodes = []
     for node_id in node_ids:
-        node_addrs = interfaces.loc[interfaces["id"] == node_id, "addrs"].values
+        try:
+            node_addrs = interfaces.loc[node_id].values.flatten()
+        except KeyError:
+            file_logger.warning("Node {} in AS {} does not have any interface".format(node_id, as_name))
+            node_addrs = []
         interfaces_of_nodes.append(to_binary(node_addrs))
     return interfaces_of_nodes
 
 
-@jit(float64[:](int64[:,:], float64[:,:]))
+@jit(float64[:](int64[:, :], float64[:, :]))
 def get_edge_weights(edges, locations):
     size = edges.shape[0]
     weights = np.zeros(edges.shape[0])
@@ -104,7 +109,7 @@ def create_graphs(locations, interfaces, edges, edge_weights, graph_path):
     g = gt.Graph(directed=False)
     g.add_vertex(locations.shape[0])
     g.vp.pos = g.new_vp("vector<float>", vals=locations)
-    g.vp.pos = g.new_vp("object", vals=interfaces)
+    g.vp.interface = g.new_vp("object", vals=interfaces)
     g.add_edge_list(edges)
     g.ep.weight = g.new_ep("float", vals=edge_weights)
     g.save(graph_path)
@@ -136,6 +141,7 @@ def extract_graphs(
                 non_interfaces_ases += 1
                 continue  # TODO: generate synthetic interfaces optionally
         node_locations, links, interfaces = inf_out
+        print("AS", as_name, "nodes", node_locations.shape[0], "links", links.shape[0], "interfaces", interfaces.shape[0])
 
         X = node_locations.loc[:, ("latitude", "longitude")].values
         noised_X, labels, nodes, _, _ = get_unique_index(X, add_noise=True)
@@ -154,7 +160,7 @@ def extract_graphs(
         edges = links_non_loops_multi.loc[:, ("label1", "label2")].values
         locations = node_locations.loc[:, ("latitude", "longitude")].values
         edge_weights = get_edge_weights(edges, locations)
-        interfaces_of_nodes = parse_interfaces(node_locations, interfaces)
+        interfaces_of_nodes = parse_interfaces(node_locations, interfaces, as_name, file_logger)
         graph_path = os.path.join(root_path, "{}.gt.xz".format(as_name))
         create_graphs(locations, interfaces_of_nodes, edges, edge_weights, graph_path)
 
@@ -163,7 +169,7 @@ def extract_graphs(
         n_links = links_non_loops_multi.shape[0]
         all_n_links = links.shape[0]
         file_logger.info(
-            "For AS {},  {} / {} of nodes and {} / {} of links.".format(
+            "For AS {},  {} of {} nodes and {} of {} links.".format(
                 as_name, n_nodes, all_n_nodes, n_links, all_n_links
             )
         )
@@ -185,6 +191,4 @@ def create_graphs_from_ases(geo_path, links_path, interfaces_path):
     root_path = os.path.join("data", "graphs")
     os.makedirs(root_path, exist_ok=True)
     file_logger = create_logger("graphs.log")
-    extract_graphs(
-        geo_path, links_path, interfaces_path, root_path, file_logger
-    )
+    extract_graphs(geo_path, links_path, interfaces_path, root_path, file_logger)

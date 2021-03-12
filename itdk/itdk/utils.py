@@ -25,12 +25,13 @@ def noised_location(X, inverse_idx, counts, mean, std, bound, seed=12345):
             delta = bound[1] - bound[0]
             up_cmp = new_x > bound[1]
             down_cmp = new_x < bound[0]
-            if np.any(up_cmp):
-                eps = new_x[up_cmp] - bound[1]
-                new_x[up_cmp] -= eps + rng.uniform(size=up_cmp.sum()) * delta
-            elif np.any(down_cmp):
-                eps = bound[0] - new_x[down_cmp]
-                new_x[down_cmp] += eps + rng.uniform(size=down_cmp.sum()) * delta
+            if np.any(up_cmp) or np.any(down_cmp):
+                if np.any(up_cmp):
+                    eps = new_x[up_cmp] - bound[1]
+                    new_x[up_cmp] -= eps + rng.uniform(size=up_cmp.sum()) * delta
+                if np.any(down_cmp):
+                    eps = bound[0] - new_x[down_cmp]
+                    new_x[down_cmp] += eps + rng.uniform(size=down_cmp.sum()) * delta
             noised_X[i] = new_x
     return noised_X
 
