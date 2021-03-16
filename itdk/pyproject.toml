@@ -3,6 +3,7 @@ name = "itdk"
 version = "0.1.0"
 description = ""
 authors = ["Caio Dadauto <caiodadauto@gmail.com>"]
+build = 'build.py'
 
 [tool.poetry.dependencies]
 python = ">=3.7.1,<3.9"
@@ -14,5 +15,5 @@ numba = "^0.52.0"
 pytest = "^5.2"
 
 [build-system]
-requires = ["poetry-core>=1.0.0"]
+requires = ["poetry-core>=1.0.0", "cython"]
 build-backend = "poetry.core.masonry.api"
