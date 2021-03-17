@@ -1229,6 +1229,7 @@ static const char __pyx_k_weight[] = "weight";
 static const char __pyx_k_targets[] = "targets";
 static const char __pyx_k_weights[] = "weights";
 static const char __pyx_k_all_paths[] = "all_paths";
+static const char __pyx_k_n_threads[] = "n_threads";
 static const char __pyx_k_num_of_nodes[] = "num_of_nodes";
 static const char __pyx_k_num_vertices[] = "num_vertices";
 static const char __pyx_k_cline_in_traceback[] = "cline_in_traceback";
@@ -1246,6 +1247,7 @@ static PyObject *__pyx_n_s_itdk_graph_utils_paths;
 static PyObject *__pyx_kp_s_itdk_graph_utils_paths_pyx;
 static PyObject *__pyx_n_s_j;
 static PyObject *__pyx_n_s_main;
+static PyObject *__pyx_n_s_n_threads;
 static PyObject *__pyx_n_s_name;
 static PyObject *__pyx_n_s_num_of_nodes;
 static PyObject *__pyx_n_s_num_vertices;
@@ -1261,15 +1263,15 @@ static PyObject *__pyx_n_s_w;
 static PyObject *__pyx_n_s_weight;
 static PyObject *__pyx_n_s_weights;
 static PyObject *__pyx_n_s_zip;
-static PyObject *__pyx_pf_4itdk_11graph_utils_5paths_all_paths(CYTHON_UNUSED PyObject *__pyx_self, PyObject *__pyx_v_g, PyObject *__pyx_v_tgs); /* proto */
+static PyObject *__pyx_pf_4itdk_11graph_utils_5paths_all_paths(CYTHON_UNUSED PyObject *__pyx_self, PyObject *__pyx_v_g, PyObject *__pyx_v_tgs, int __pyx_v_n_threads); /* proto */
 static PyObject *__pyx_tuple_;
 static PyObject *__pyx_codeobj__2;
 /* Late includes */
 
 /* "itdk/graph_utils/paths.pyx":10
- *     vector[vector[float]] cpp_all_paths(vector[vector[float]] WU, vector[int] targets)
+ *     vector[vector[float]] cpp_all_paths(vector[vector[float]] WU, vector[int] targets, int n_threads)
  * 
- * def all_paths(object g, list tgs):             # <<<<<<<<<<<<<<
+ * def all_paths(object g, list tgs, int n_threads):             # <<<<<<<<<<<<<<
  *     cdef int num_of_nodes = g.num_vertices()
  *     cdef vector[vector[float]] WU
  */
@@ -1280,6 +1282,7 @@ static PyMethodDef __pyx_mdef_4itdk_11graph_utils_5paths_1all_paths = {"all_path
 static PyObject *__pyx_pw_4itdk_11graph_utils_5paths_1all_paths(PyObject *__pyx_self, PyObject *__pyx_args, PyObject *__pyx_kwds) {
   PyObject *__pyx_v_g = 0;
   PyObject *__pyx_v_tgs = 0;
+  int __pyx_v_n_threads;
   int __pyx_lineno = 0;
   const char *__pyx_filename = NULL;
   int __pyx_clineno = 0;
@@ -1287,12 +1290,14 @@ static PyObject *__pyx_pw_4itdk_11graph_utils_5paths_1all_paths(PyObject *__pyx_
   __Pyx_RefNannyDeclarations
   __Pyx_RefNannySetupContext("all_paths (wrapper)", 0);
   {
-    static PyObject **__pyx_pyargnames[] = {&__pyx_n_s_g,&__pyx_n_s_tgs,0};
-    PyObject* values[2] = {0,0};
+    static PyObject **__pyx_pyargnames[] = {&__pyx_n_s_g,&__pyx_n_s_tgs,&__pyx_n_s_n_threads,0};
+    PyObject* values[3] = {0,0,0};
     if (unlikely(__pyx_kwds)) {
       Py_ssize_t kw_args;
       const Py_ssize_t pos_args = PyTuple_GET_SIZE(__pyx_args);
       switch (pos_args) {
+        case  3: values[2] = PyTuple_GET_ITEM(__pyx_args, 2);
+        CYTHON_FALLTHROUGH;
         case  2: values[1] = PyTuple_GET_ITEM(__pyx_args, 1);
         CYTHON_FALLTHROUGH;
         case  1: values[0] = PyTuple_GET_ITEM(__pyx_args, 0);
@@ -1309,31 +1314,39 @@ static PyObject *__pyx_pw_4itdk_11graph_utils_5paths_1all_paths(PyObject *__pyx_
         case  1:
         if (likely((values[1] = __Pyx_PyDict_GetItemStr(__pyx_kwds, __pyx_n_s_tgs)) != 0)) kw_args--;
         else {
-          __Pyx_RaiseArgtupleInvalid("all_paths", 1, 2, 2, 1); __PYX_ERR(0, 10, __pyx_L3_error)
+          __Pyx_RaiseArgtupleInvalid("all_paths", 1, 3, 3, 1); __PYX_ERR(0, 10, __pyx_L3_error)
+        }
+        CYTHON_FALLTHROUGH;
+        case  2:
+        if (likely((values[2] = __Pyx_PyDict_GetItemStr(__pyx_kwds, __pyx_n_s_n_threads)) != 0)) kw_args--;
+        else {
+          __Pyx_RaiseArgtupleInvalid("all_paths", 1, 3, 3, 2); __PYX_ERR(0, 10, __pyx_L3_error)
         }
       }
       if (unlikely(kw_args > 0)) {
         if (unlikely(__Pyx_ParseOptionalKeywords(__pyx_kwds, __pyx_pyargnames, 0, values, pos_args, "all_paths") < 0)) __PYX_ERR(0, 10, __pyx_L3_error)
       }
-    } else if (PyTuple_GET_SIZE(__pyx_args) != 2) {
+    } else if (PyTuple_GET_SIZE(__pyx_args) != 3) {
       goto __pyx_L5_argtuple_error;
     } else {
       values[0] = PyTuple_GET_ITEM(__pyx_args, 0);
       values[1] = PyTuple_GET_ITEM(__pyx_args, 1);
+      values[2] = PyTuple_GET_ITEM(__pyx_args, 2);
     }
     __pyx_v_g = values[0];
     __pyx_v_tgs = ((PyObject*)values[1]);
+    __pyx_v_n_threads = __Pyx_PyInt_As_int(values[2]); if (unlikely((__pyx_v_n_threads == (int)-1) && PyErr_Occurred())) __PYX_ERR(0, 10, __pyx_L3_error)
   }
   goto __pyx_L4_argument_unpacking_done;
   __pyx_L5_argtuple_error:;
-  __Pyx_RaiseArgtupleInvalid("all_paths", 1, 2, 2, PyTuple_GET_SIZE(__pyx_args)); __PYX_ERR(0, 10, __pyx_L3_error)
+  __Pyx_RaiseArgtupleInvalid("all_paths", 1, 3, 3, PyTuple_GET_SIZE(__pyx_args)); __PYX_ERR(0, 10, __pyx_L3_error)
   __pyx_L3_error:;
   __Pyx_AddTraceback("itdk.graph_utils.paths.all_paths", __pyx_clineno, __pyx_lineno, __pyx_filename);
   __Pyx_RefNannyFinishContext();
   return NULL;
   __pyx_L4_argument_unpacking_done:;
   if (unlikely(!__Pyx_ArgTypeTest(((PyObject *)__pyx_v_tgs), (&PyList_Type), 1, "tgs", 1))) __PYX_ERR(0, 10, __pyx_L1_error)
-  __pyx_r = __pyx_pf_4itdk_11graph_utils_5paths_all_paths(__pyx_self, __pyx_v_g, __pyx_v_tgs);
+  __pyx_r = __pyx_pf_4itdk_11graph_utils_5paths_all_paths(__pyx_self, __pyx_v_g, __pyx_v_tgs, __pyx_v_n_threads);
 
   /* function exit code */
   goto __pyx_L0;
@@ -1344,7 +1357,7 @@ static PyObject *__pyx_pw_4itdk_11graph_utils_5paths_1all_paths(PyObject *__pyx_
   return __pyx_r;
 }
 
-static PyObject *__pyx_pf_4itdk_11graph_utils_5paths_all_paths(CYTHON_UNUSED PyObject *__pyx_self, PyObject *__pyx_v_g, PyObject *__pyx_v_tgs) {
+static PyObject *__pyx_pf_4itdk_11graph_utils_5paths_all_paths(CYTHON_UNUSED PyObject *__pyx_self, PyObject *__pyx_v_g, PyObject *__pyx_v_tgs, int __pyx_v_n_threads) {
   int __pyx_v_num_of_nodes;
   std::vector<std::vector<float> >  __pyx_v_WU;
   std::vector<float>  __pyx_v_row;
@@ -1388,7 +1401,7 @@ static PyObject *__pyx_pf_4itdk_11graph_utils_5paths_all_paths(CYTHON_UNUSED PyO
 
   /* "itdk/graph_utils/paths.pyx":11
  * 
- * def all_paths(object g, list tgs):
+ * def all_paths(object g, list tgs, int n_threads):
  *     cdef int num_of_nodes = g.num_vertices()             # <<<<<<<<<<<<<<
  *     cdef vector[vector[float]] WU
  *     cdef vector[float] row
@@ -1809,7 +1822,7 @@ static PyObject *__pyx_pf_4itdk_11graph_utils_5paths_all_paths(CYTHON_UNUSED PyO
  *         else:
  *             WU[p][s - p] = float(w)             # <<<<<<<<<<<<<<
  * 
- *     return cpp_all_paths(WU, targets)
+ *     return cpp_all_paths(WU, targets, n_threads)
  */
     /*else*/ {
       __pyx_t_18 = __Pyx_PyObject_AsDouble(__pyx_v_w); if (unlikely(__pyx_t_18 == ((double)((double)-1)) && PyErr_Occurred())) __PYX_ERR(0, 32, __pyx_L1_error)
@@ -1835,19 +1848,19 @@ static PyObject *__pyx_pf_4itdk_11graph_utils_5paths_all_paths(CYTHON_UNUSED PyO
   /* "itdk/graph_utils/paths.pyx":34
  *             WU[p][s - p] = float(w)
  * 
- *     return cpp_all_paths(WU, targets)             # <<<<<<<<<<<<<<
+ *     return cpp_all_paths(WU, targets, n_threads)             # <<<<<<<<<<<<<<
  */
   __Pyx_XDECREF(__pyx_r);
-  __pyx_t_2 = __pyx_convert_vector_to_py_std_3a__3a_vector_3c_float_3e___(cpp_all_paths(__pyx_v_WU, __pyx_v_targets)); if (unlikely(!__pyx_t_2)) __PYX_ERR(0, 34, __pyx_L1_error)
+  __pyx_t_2 = __pyx_convert_vector_to_py_std_3a__3a_vector_3c_float_3e___(cpp_all_paths(__pyx_v_WU, __pyx_v_targets, __pyx_v_n_threads)); if (unlikely(!__pyx_t_2)) __PYX_ERR(0, 34, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_2);
   __pyx_r = __pyx_t_2;
   __pyx_t_2 = 0;
   goto __pyx_L0;
 
   /* "itdk/graph_utils/paths.pyx":10
- *     vector[vector[float]] cpp_all_paths(vector[vector[float]] WU, vector[int] targets)
+ *     vector[vector[float]] cpp_all_paths(vector[vector[float]] WU, vector[int] targets, int n_threads)
  * 
- * def all_paths(object g, list tgs):             # <<<<<<<<<<<<<<
+ * def all_paths(object g, list tgs, int n_threads):             # <<<<<<<<<<<<<<
  *     cdef int num_of_nodes = g.num_vertices()
  *     cdef vector[vector[float]] WU
  */
@@ -2057,6 +2070,7 @@ static __Pyx_StringTabEntry __pyx_string_tab[] = {
   {&__pyx_kp_s_itdk_graph_utils_paths_pyx, __pyx_k_itdk_graph_utils_paths_pyx, sizeof(__pyx_k_itdk_graph_utils_paths_pyx), 0, 0, 1, 0},
   {&__pyx_n_s_j, __pyx_k_j, sizeof(__pyx_k_j), 0, 0, 1, 1},
   {&__pyx_n_s_main, __pyx_k_main, sizeof(__pyx_k_main), 0, 0, 1, 1},
+  {&__pyx_n_s_n_threads, __pyx_k_n_threads, sizeof(__pyx_k_n_threads), 0, 0, 1, 1},
   {&__pyx_n_s_name, __pyx_k_name, sizeof(__pyx_k_name), 0, 0, 1, 1},
   {&__pyx_n_s_num_of_nodes, __pyx_k_num_of_nodes, sizeof(__pyx_k_num_of_nodes), 0, 0, 1, 1},
   {&__pyx_n_s_num_vertices, __pyx_k_num_vertices, sizeof(__pyx_k_num_vertices), 0, 0, 1, 1},
@@ -2087,16 +2101,16 @@ static CYTHON_SMALL_CODE int __Pyx_InitCachedConstants(void) {
   __Pyx_RefNannySetupContext("__Pyx_InitCachedConstants", 0);
 
   /* "itdk/graph_utils/paths.pyx":10
- *     vector[vector[float]] cpp_all_paths(vector[vector[float]] WU, vector[int] targets)
+ *     vector[vector[float]] cpp_all_paths(vector[vector[float]] WU, vector[int] targets, int n_threads)
  * 
- * def all_paths(object g, list tgs):             # <<<<<<<<<<<<<<
+ * def all_paths(object g, list tgs, int n_threads):             # <<<<<<<<<<<<<<
  *     cdef int num_of_nodes = g.num_vertices()
  *     cdef vector[vector[float]] WU
  */
-  __pyx_tuple_ = PyTuple_Pack(16, __pyx_n_s_g, __pyx_n_s_tgs, __pyx_n_s_num_of_nodes, __pyx_n_s_WU, __pyx_n_s_row, __pyx_n_s_targets, __pyx_n_s_edges, __pyx_n_s_weights, __pyx_n_s_t, __pyx_n_s_i, __pyx_n_s_j, __pyx_n_s_w, __pyx_n_s_ep, __pyx_n_s_es, __pyx_n_s_p, __pyx_n_s_s); if (unlikely(!__pyx_tuple_)) __PYX_ERR(0, 10, __pyx_L1_error)
+  __pyx_tuple_ = PyTuple_Pack(17, __pyx_n_s_g, __pyx_n_s_tgs, __pyx_n_s_n_threads, __pyx_n_s_num_of_nodes, __pyx_n_s_WU, __pyx_n_s_row, __pyx_n_s_targets, __pyx_n_s_edges, __pyx_n_s_weights, __pyx_n_s_t, __pyx_n_s_i, __pyx_n_s_j, __pyx_n_s_w, __pyx_n_s_ep, __pyx_n_s_es, __pyx_n_s_p, __pyx_n_s_s); if (unlikely(!__pyx_tuple_)) __PYX_ERR(0, 10, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_tuple_);
   __Pyx_GIVEREF(__pyx_tuple_);
-  __pyx_codeobj__2 = (PyObject*)__Pyx_PyCode_New(2, 0, 16, 0, CO_OPTIMIZED|CO_NEWLOCALS, __pyx_empty_bytes, __pyx_empty_tuple, __pyx_empty_tuple, __pyx_tuple_, __pyx_empty_tuple, __pyx_empty_tuple, __pyx_kp_s_itdk_graph_utils_paths_pyx, __pyx_n_s_all_paths, 10, __pyx_empty_bytes); if (unlikely(!__pyx_codeobj__2)) __PYX_ERR(0, 10, __pyx_L1_error)
+  __pyx_codeobj__2 = (PyObject*)__Pyx_PyCode_New(3, 0, 17, 0, CO_OPTIMIZED|CO_NEWLOCALS, __pyx_empty_bytes, __pyx_empty_tuple, __pyx_empty_tuple, __pyx_tuple_, __pyx_empty_tuple, __pyx_empty_tuple, __pyx_kp_s_itdk_graph_utils_paths_pyx, __pyx_n_s_all_paths, 10, __pyx_empty_bytes); if (unlikely(!__pyx_codeobj__2)) __PYX_ERR(0, 10, __pyx_L1_error)
   __Pyx_RefNannyFinishContext();
   return 0;
   __pyx_L1_error:;
@@ -2378,9 +2392,9 @@ if (!__Pyx_RefNanny) {
   #endif
 
   /* "itdk/graph_utils/paths.pyx":10
- *     vector[vector[float]] cpp_all_paths(vector[vector[float]] WU, vector[int] targets)
+ *     vector[vector[float]] cpp_all_paths(vector[vector[float]] WU, vector[int] targets, int n_threads)
  * 
- * def all_paths(object g, list tgs):             # <<<<<<<<<<<<<<
+ * def all_paths(object g, list tgs, int n_threads):             # <<<<<<<<<<<<<<
  *     cdef int num_of_nodes = g.num_vertices()
  *     cdef vector[vector[float]] WU
  */

@@ -5,9 +5,9 @@ from libcpp.vector cimport vector
 
 
 cdef extern from "_paths.h":
-    vector[vector[float]] cpp_all_paths(vector[vector[float]] WU, vector[int] targets)
+    vector[vector[float]] cpp_all_paths(vector[vector[float]] WU, vector[int] targets, int n_threads)
 
-def all_paths(object g, list tgs):
+def all_paths(object g, list tgs, int n_threads):
     cdef int num_of_nodes = g.num_vertices()
     cdef vector[vector[float]] WU
     cdef vector[float] row
@@ -31,4 +31,4 @@ def all_paths(object g, list tgs):
         else:
             WU[p][s - p] = float(w)
 
-    return cpp_all_paths(WU, targets)
+    return cpp_all_paths(WU, targets, n_threads)
