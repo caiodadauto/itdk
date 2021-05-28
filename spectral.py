@@ -15,9 +15,6 @@ from graph_tool.spectral import adjacency
 from graph_tool.topology import label_components
 
 
-N_GRAPHS = 0
-
-
 def discretize(
     vectors, *, copy=True, max_svd_restarts=30, n_iter_max=20, random_state=None
 ):
@@ -115,7 +112,7 @@ def spectral_clustering(
     eigen_tol=0.0,
     assign_labels="kmeans",
     norm_laplacian=False,
-    drop_first=False,
+    drop_first=True,
 ):
     if assign_labels not in ("kmeans", "discretize"):
         raise ValueError(
@@ -144,23 +141,21 @@ def spectral_clustering(
     return labels
 
 
-def check_components(g, min_graph_size, max_graph_size, save_dir):
-    global N_GRAPHS
-    components = dict(valid=[], to_cluster=[])
+def check_components(g, min_graph_size, max_graph_size, name):
+    to_cluster_graphs = []
     component_labels, counts = label_components(g)
     labels = np.array(component_labels.a)
     unique_labels = np.arange(counts.shape[0])
     if len(counts) == 1:
         size = g.num_vertices()
         if size >= min_graph_size and size <= max_graph_size:
-            components["valid"].append(g)
-            g.save(os.path.join(save_dir, "{}.gt.xz".format(N_GRAPHS)))
-            N_GRAPHS += 1
+            g.save(os.path.join(name["dir"], "{}-{}.gt.xz".format(name["AS"], name["cluster"])))
+            name["cluster"] += 1
         elif size > max_graph_size:
-            components["to_cluster"].append(g)
-        elif size < min_graph_size:
-            print("Invalid component with size: {}".format(size))
-        return components
+            to_cluster_graphs.append(g)
+        # elif size < min_graph_size:
+        #     print("Invalid component with size: {}".format(size))
+        return to_cluster_graphs
 
     valid_mask = (counts >= min_graph_size) & (counts <= max_graph_size)
     invalid_mask = counts < min_graph_size
@@ -169,23 +164,22 @@ def check_components(g, min_graph_size, max_graph_size, save_dir):
     to_cluster_labels = unique_labels[to_cluster_mask]
     for l in valid_labels:
         gv = gt.GraphView(g, vfilt=labels == l)
-        gv.save(os.path.join(save_dir, "{}.gt.xz".format(N_GRAPHS)))
-        components["valid"].append(gv)
-        N_GRAPHS += 1
+        gv.save(os.path.join(name["dir"], "{}-{}.gt.xz".format(name["AS"], name["cluster"])))
+        name["cluster"] += 1
     for l in to_cluster_labels:
-        components["to_cluster"].append(gt.GraphView(g, vfilt=labels == l))
-    print(
-        "Invalid components: {} Sizes {}".format(
-            invalid_mask.sum(), counts[invalid_mask]
-        )
-    )
-    return components
+        gv = gt.GraphView(g, vfilt=labels == l)
+        to_cluster_graphs.append(gv)
+    # print(
+    #     "Invalid components: {} Sizes {}".format(
+    #         invalid_mask.sum(), counts[invalid_mask]
+    #     )
+    # )
+    return to_cluster_graphs
 
 
 def check_clusters(
-    g, labels, unique_labels, counts, min_graph_size, max_graph_size, save_dir
+    g, labels, unique_labels, counts, min_graph_size, max_graph_size, name
 ):
-    global N_GRAPHS
     to_cluster_graphs = []
     invalid_mask = counts < min_graph_size
     valid_mask = (counts >= min_graph_size) & (counts <= max_graph_size)
@@ -198,19 +192,14 @@ def check_clusters(
 
     for l in valid_labels:
         gv = gt.GraphView(g, vfilt=labels == l)
-        components = check_components(gv, min_graph_size, max_graph_size, save_dir)
-        to_cluster_graphs += components["to_cluster"]
-        for gv in components["valid"]:
-            gv.save(os.path.join(save_dir, "{}.gt.xz".format(N_GRAPHS)))
-            N_GRAPHS += 1
+        _ = check_components(gv, min_graph_size, max_graph_size, name)
     for l in to_cluster_labels:
         gv = gt.GraphView(g, vfilt=labels == l)
-        to_cluster_graphs.append(gv)
+        to_cluster_graphs += check_components(gv, min_graph_size, max_graph_size, name)
     for l in invalid_labels:
         nodes_to_remove[labels == l] = -1
     gv = gt.GraphView(g, vfilt=nodes_to_remove == -1)
-    components = check_components(gv, min_graph_size, max_graph_size, save_dir)
-    to_cluster_graphs += components["to_cluster"]
+    to_cluster_graphs += check_components(gv, min_graph_size, max_graph_size, name)
     return to_cluster_graphs
 
 
@@ -218,9 +207,9 @@ def _get_clusters(
     gv,
     min_graph_size,
     max_graph_size,
-    drop_first=True,
-    norm_laplacian=False,
-    save_dir=".",
+    name,
+    drop_first=False,
+    norm_laplacian=True,
 ):
     graph_size = gv.num_vertices()
     A = adjacency(gv, weight=gv.ep.weight)
@@ -236,19 +225,25 @@ def _get_clusters(
         n_components = 10
         eigen_solver = "amg"
 
-    labels = spectral_clustering(
-        A,
-        n_clusters=n_components,
-        eigen_solver=eigen_solver,
-        assign_labels="discretize",
-        drop_first=drop_first,
-        norm_laplacian=norm_laplacian,
-    )
+    try:
+        labels = spectral_clustering(
+            A,
+            n_clusters=n_components,
+            eigen_solver=eigen_solver,
+            assign_labels="discretize",
+            drop_first=drop_first,
+            norm_laplacian=norm_laplacian,
+        )
+    except Exception as e:
+        print(name)
+        print(A)
+        print(n_components)
+        print(eigen_solver)
+        raise e
     unique_labels, counts = np.unique(labels, return_counts=True)
     to_cluster_graphs = check_clusters(
-        gv, labels, unique_labels, counts, min_graph_size, max_graph_size, save_dir
+        gv, labels, unique_labels, counts, min_graph_size, max_graph_size, name
     )
-    # valid_graphs = components["valid"]
     return to_cluster_graphs
 
 
@@ -257,46 +252,62 @@ def get_clusters(
     min_graph_size,
     max_graph_size,
     n_threads,
+    name,
     drop_first=True,
     norm_laplacian=False,
-    save_dir=".",
     parallel=False,
 ):
-    chunksize = 1
     partial_func = partial(
         _get_clusters,
         min_graph_size=min_graph_size,
         max_graph_size=max_graph_size,
-        save_dir=save_dir,
+        name=name,
     )
-    if parallel:
-        with Pool(n_threads) as pool:
-            while len(to_cluster_graphs) > 0:
-                next_to_cluster_graphs = []
-                for out in pool.imap_unordered(
-                    partial_func, to_cluster_graphs, chunksize=chunksize
-                ):
-                    next_to_cluster_graphs += out
-                to_cluster_graphs = next_to_cluster_graphs
-                n_graphs_to_cluster = len(to_cluster_graphs)
-                if n_graphs_to_cluster > 500 and n_graphs_to_cluster <= 1000:
-                    chunksize = 10
-                elif n_graphs_to_cluster > 1000 and n_graphs_to_cluster <= 10000:
-                    chunksize = 100
-                elif n_graphs_to_cluster > 10000:
-                    chunksize = 1000
-    else:
-        while len(to_cluster_graphs) > 0:
-            gv = to_cluster_graphs.pop()
-            to_cluster_graphs = partial_func(gv) + to_cluster_graphs
+    # TODO: Create separated Pools
+    # chunksize = 1
+    # if parallel:
+    #     with Pool(n_threads) as pool:
+    #         while len(to_cluster_graphs) > 0:
+    #             next_to_cluster_graphs = []
+    #             for out in pool.imap_unordered(
+    #                 partial_func, to_cluster_graphs, chunksize=chunksize
+    #             ):
+    #                 next_to_cluster_graphs += out
+    #             to_cluster_graphs = next_to_cluster_graphs
+    #             n_graphs_to_cluster = len(to_cluster_graphs)
+    #             if n_graphs_to_cluster > 500 and n_graphs_to_cluster <= 1000:
+    #                 chunksize = 10
+    #             elif n_graphs_to_cluster > 1000 and n_graphs_to_cluster <= 10000:
+    #                 chunksize = 100
+    #             elif n_graphs_to_cluster > 10000:
+    #                 chunksize = 1000
+    # else:
+    while len(to_cluster_graphs) > 0:
+        gv = to_cluster_graphs.pop()
+        to_cluster_graphs = partial_func(gv) + to_cluster_graphs
 
 
-# def draw(g, valid_graphs, save_dir):
-#     from graph_tool.draw import graph_draw
-#
-#     graph_draw(g, output="original.png")
-#     for i, gv in enumerate(valid_graphs):
-#         graph_draw(gv, output=os.path.join(save_dir, "{}.png".format(i)))
+def run(paths, min_graph_size, max_graph_size, save_dir, n_threads_to_cluster):
+    for gp in paths:
+        print(gp)
+        name = name = dict(
+            dir=save_dir, cluster=0, AS=os.path.basename(gp).split(".")[0]
+        )
+        g = gt.load_graph(gp)
+        # if g.num_vertices() > 1000:
+        #     parallel = True
+        # else:
+        #     parallel = False
+        parallel = False
+        to_cluster_graphs = check_components(g, min_graph_size, max_graph_size, name)
+        get_clusters(
+            to_cluster_graphs,
+            min_graph_size,
+            max_graph_size,
+            n_threads_to_cluster,
+            name,
+            parallel=parallel,
+        )
 
 
 def run_clustering(
@@ -313,37 +324,21 @@ def run_clustering(
         chunk_size = n_files // n_threads
         idxs = np.arange(0, n_files, chunk_size)
         idxs = np.concatenate([idxs, [n_files]])
-        for i in idxs[1:]:
-            return graph_paths[i - 1 : i]
-
-    def run(paths, min_graph_size, max_graph_size, save_dir):
-        for gp in paths:
-            g = gt.load_graph(gp)
-            if g.num_vertices() > 1000:
-                parallel = True
-            else:
-                parallel = False
-            components = check_components(g, min_graph_size, max_graph_size, save_dir)
-            get_clusters(
-                components["to_cluster"],
-                min_graph_size,
-                max_graph_size,
-                n_threads_to_cluster,
-                save_dir=save_dir,
-                parallel=parallel,
-            )
+        for i in range(1, len(idxs)):
+            yield graph_paths[idxs[i - 1] : idxs[i]]
 
     partial_func = partial(
         run,
         save_dir=save_dir,
         min_graph_size=min_graph_size,
         max_graph_size=max_graph_size,
+        n_threads_to_cluster=n_threads_to_cluster,
     )
     if parallel:
         slicer = graph_slicer(graph_paths, n_threads_to_file)
         with Pool(n_threads_to_file) as pool:
             for _ in pool.imap_unordered(partial_func, slicer):
-                print("Slicer Done")
+                print("Slice Done")
     else:
         partial_func(graph_paths)
 
@@ -352,14 +347,14 @@ if __name__ == "__main__":
     dir_path = sys.argv[1]
     min_graph_size = 20
     max_graph_size = 60
-    n_threads_to_file = int(np.ceil(os.cpu_count() * 0.6))
-    n_threads_to_cluster = os.cpu_count() - n_threads_to_file
+    n_threads_to_file = os.cpu_count() # int(np.ceil(os.cpu_count() * 0.6))
+    n_threads_to_cluster = 1 # os.cpu_count() - n_threads_to_file
 
     graph_paths = []
     for p in os.listdir(dir_path):
         sp = p.split(".")
         if len(sp) > 2 and sp[1] == "gt":
-            graph_paths.append(p)
+            graph_paths.append(os.path.join(dir_path, p))
     if len(graph_paths) / n_threads_to_file > 1:
         parallel = True
     else:
