@@ -149,7 +149,11 @@ def check_components(g, min_graph_size, max_graph_size, name):
     if len(counts) == 1:
         size = g.num_vertices()
         if size >= min_graph_size and size <= max_graph_size:
-            g.save(os.path.join(name["dir"], "{}-{}.gt.xz".format(name["AS"], name["cluster"])))
+            g.save(
+                os.path.join(
+                    name["dir"], "{}-{}.gt.xz".format(name["AS"], name["cluster"])
+                )
+            )
             name["cluster"] += 1
         elif size > max_graph_size:
             to_cluster_graphs.append(g)
@@ -164,7 +168,9 @@ def check_components(g, min_graph_size, max_graph_size, name):
     to_cluster_labels = unique_labels[to_cluster_mask]
     for l in valid_labels:
         gv = gt.GraphView(g, vfilt=labels == l)
-        gv.save(os.path.join(name["dir"], "{}-{}.gt.xz".format(name["AS"], name["cluster"])))
+        gv.save(
+            os.path.join(name["dir"], "{}-{}.gt.xz".format(name["AS"], name["cluster"]))
+        )
         name["cluster"] += 1
     for l in to_cluster_labels:
         gv = gt.GraphView(g, vfilt=labels == l)
@@ -197,13 +203,17 @@ def check_clusters(
         n_removed_nodes += n_removed_nodes
     for l in to_cluster_labels:
         gv = gt.GraphView(g, vfilt=labels == l)
-        _to_cluster_graphs, _n_removed_nodes = check_components(gv, min_graph_size, max_graph_size, name)
+        _to_cluster_graphs, _n_removed_nodes = check_components(
+            gv, min_graph_size, max_graph_size, name
+        )
         to_cluster_graphs += _to_cluster_graphs
         n_removed_nodes += n_removed_nodes
     for l in invalid_labels:
         nodes_to_remove[labels == l] = -1
     gv = gt.GraphView(g, vfilt=nodes_to_remove == -1)
-    _to_cluster_graphs, _n_removed_nodes = check_components(gv, min_graph_size, max_graph_size, name)
+    _to_cluster_graphs, _n_removed_nodes = check_components(
+        gv, min_graph_size, max_graph_size, name
+    )
     to_cluster_graphs += _to_cluster_graphs
     n_removed_nodes += n_removed_nodes
     return to_cluster_graphs, n_removed_nodes
@@ -284,7 +294,7 @@ def get_clusters(
     # else:
     while len(to_cluster_graphs) > 0:
         gv = to_cluster_graphs.pop()
-        _to_cluster_graphs, _n_removed_nodes = partial_func(gv) 
+        _to_cluster_graphs, _n_removed_nodes = partial_func(gv)
         to_cluster_graphs = _to_cluster_graphs + to_cluster_graphs
         n_removed_nodes += _n_removed_nodes
     return n_removed_nodes
@@ -301,7 +311,9 @@ def run(paths, min_graph_size, max_graph_size, save_dir, n_threads_to_cluster):
         # else:
         #     parallel = False
         parallel = False
-        to_cluster_graphs, n_removed_nodes = check_components(g, min_graph_size, max_graph_size, name)
+        to_cluster_graphs, n_removed_nodes = check_components(
+            g, min_graph_size, max_graph_size, name
+        )
         _n_removed_nodes = get_clusters(
             to_cluster_graphs,
             min_graph_size,
@@ -309,6 +321,11 @@ def run(paths, min_graph_size, max_graph_size, save_dir, n_threads_to_cluster):
             n_threads_to_cluster,
             name,
             parallel=parallel,
+        )
+        print(
+            "{}, {}, {}".format(
+                as_name, g.num_vertices(), int(n_removed_nodes + _n_removed_nodes)
+            )
         )
         removed_count[as_name] = (g.num_vertices(), n_removed_nodes + _n_removed_nodes)
     return removed_count
@@ -342,21 +359,22 @@ def run_clustering(
     if parallel:
         slicer = graph_slicer(graph_paths, n_threads_to_file)
         with Pool(n_threads_to_file) as pool:
-            for removed_count in pool.imap_unordered(partial_func, slicer):
-                for as_name, (size, removed_n) in removed_count.items():
-                    print("{}, {}, {}".format(as_name, size, removed_n))
+            for _ in pool.imap_unordered(partial_func, slicer):
+                pass
+                # for as_name, (size, removed_n) in removed_count.items():
+                #     print("{}, {}, {}".format(as_name, size, removed_n))
     else:
-        removed_count = partial_func(graph_paths)
-        for as_name, (size, removed_n) in removed_count.items():
-            print("{}, {}, {}".format(as_name, size, removed_n))
+        _ = partial_func(graph_paths)
+        # for as_name, (size, removed_n) in removed_count.items():
+        #     print("{}, {}, {}".format(as_name, size, removed_n))
 
 
 if __name__ == "__main__":
     dir_path = sys.argv[1]
     min_graph_size = 20
     max_graph_size = 60
-    n_threads_to_file = os.cpu_count() # int(np.ceil(os.cpu_count() * 0.6))
-    n_threads_to_cluster = 1 # os.cpu_count() - n_threads_to_file
+    n_threads_to_file = os.cpu_count()  # int(np.ceil(os.cpu_count() * 0.6))
+    n_threads_to_cluster = 1  # os.cpu_count() - n_threads_to_file
 
     graph_paths = []
     for p in os.listdir(dir_path):
