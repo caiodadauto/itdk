@@ -241,14 +241,19 @@ def _get_clusters(
         n_components = 10
         eigen_solver = "amg"
 
-    labels = spectral_clustering(
-        A,
-        n_clusters=n_components,
-        eigen_solver=eigen_solver,
-        assign_labels="discretize",
-        drop_first=drop_first,
-        norm_laplacian=norm_laplacian,
-    )
+    try:
+        labels = spectral_clustering(
+            A,
+            n_clusters=n_components,
+            eigen_solver=eigen_solver,
+            assign_labels="discretize",
+            drop_first=drop_first,
+            norm_laplacian=norm_laplacian,
+        )
+    except Exception as e:
+        print("Error {}, name {}, drop_first {}, and norm_laplacian {}".format(e, name, drop_first, norm_laplacian))
+        return [], -1
+
     unique_labels, counts = np.unique(labels, return_counts=True)
     to_cluster_graphs, n_removed_nodes = check_clusters(
         gv, labels, unique_labels, counts, min_graph_size, max_graph_size, name
@@ -300,9 +305,10 @@ def get_clusters(
     return n_removed_nodes
 
 
-def run(paths, min_graph_size, max_graph_size, save_dir, n_threads_to_cluster):
+def run(paths, min_graph_size, max_graph_size, pos_dir, save_dir, n_threads_to_cluster):
     removed_count = {}
     for gp in paths:
+        print("Processing {}".format(gp))
         as_name = os.path.basename(gp).split(".")[0]
         name = name = dict(dir=save_dir, cluster=0, AS=as_name)
         g = gt.load_graph(gp)
@@ -322,16 +328,17 @@ def run(paths, min_graph_size, max_graph_size, save_dir, n_threads_to_cluster):
             name,
             parallel=parallel,
         )
-        print(
-            "{}, {}, {}".format(
-                as_name, g.num_vertices(), int(n_removed_nodes + _n_removed_nodes)
-            )
-        )
-        removed_count[as_name] = (g.num_vertices(), n_removed_nodes + _n_removed_nodes)
+        if _n_removed_nodes < 0:
+            sremoved = -1
+        else:
+            sremoved = n_removed_nodes + _n_removed_nodes
+        removed_count[as_name] = (g.num_vertices(), sremoved)
+        os.rename(gp, os.path.join(pos_dir, os.path.basename(gp)))
     return removed_count
 
 
 def run_clustering(
+    pos_dir,
     save_dir,
     graph_paths,
     min_graph_size,
@@ -342,7 +349,7 @@ def run_clustering(
 ):
     def graph_slicer(graph_paths, n_threads):
         n_files = len(graph_paths)
-        chunk_size = n_files // n_threads
+        chunk_size = n_files // (n_threads * 3)
         idxs = np.arange(0, n_files, chunk_size)
         idxs = np.concatenate([idxs, [n_files]])
         for i in range(1, len(idxs)):
@@ -350,30 +357,32 @@ def run_clustering(
 
     partial_func = partial(
         run,
+        pos_dir=pos_dir,
         save_dir=save_dir,
         min_graph_size=min_graph_size,
         max_graph_size=max_graph_size,
         n_threads_to_cluster=n_threads_to_cluster,
     )
-    print("AS,", "Num Nodes,", "Removed Nodes")
+    finfo = open("info.csv", "w")
+    finfo.write("AS, Num Nodes, Removed Nodes\n")
     if parallel:
         slicer = graph_slicer(graph_paths, n_threads_to_file)
         with Pool(n_threads_to_file) as pool:
-            for _ in pool.imap_unordered(partial_func, slicer):
-                pass
-                # for as_name, (size, removed_n) in removed_count.items():
-                #     print("{}, {}, {}".format(as_name, size, removed_n))
+            for removed_count in pool.imap_unordered(partial_func, slicer):
+                for as_name, (size, removed_n) in removed_count.items():
+                    finfo.write("{}, {}, {}\n".format(as_name, size, removed_n))
     else:
-        _ = partial_func(graph_paths)
-        # for as_name, (size, removed_n) in removed_count.items():
-        #     print("{}, {}, {}".format(as_name, size, removed_n))
+        removed_count = partial_func(graph_paths)
+        for as_name, (size, removed_n) in removed_count.items():
+            finfo.write("{}, {}, {}\n".format(as_name, size, removed_n))
+    finfo.close()
 
 
 if __name__ == "__main__":
     dir_path = sys.argv[1]
     min_graph_size = 20
     max_graph_size = 60
-    n_threads_to_file = os.cpu_count()  # int(np.ceil(os.cpu_count() * 0.6))
+    n_threads_to_file = 2 # os.cpu_count()  # int(np.ceil(os.cpu_count() * 0.6))
     n_threads_to_cluster = 1  # os.cpu_count() - n_threads_to_file
 
     graph_paths = []
@@ -381,14 +390,17 @@ if __name__ == "__main__":
         sp = p.split(".")
         if len(sp) > 2 and sp[1] == "gt":
             graph_paths.append(os.path.join(dir_path, p))
-    if len(graph_paths) / n_threads_to_file > 1:
+    if len(graph_paths) / n_threads_to_file > 3:
         parallel = True
     else:
         parallel = False
 
-    save_dir = os.path.join(dir_path, "graphs_clusters")
+    pos_dir = os.path.join(dir_path, "processed")
+    save_dir = os.path.join(dir_path, "clusters")
+    os.makedirs(pos_dir, exist_ok=True)
     os.makedirs(save_dir, exist_ok=True)
     run_clustering(
+        pos_dir,
         save_dir,
         graph_paths,
         min_graph_size,
