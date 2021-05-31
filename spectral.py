@@ -232,13 +232,13 @@ def _get_clusters(
 
     eigen_solver = None
     if graph_size < 100:
-        n_components = 2
+        n_components = 3
     elif graph_size >= 100 and graph_size < 1000:
-        n_components = 4
+        n_components = 5
     elif graph_size >= 1000 and graph_size < 100000:
-        n_components = 8
+        n_components = 9
     else:
-        n_components = 10
+        n_components = 11
         eigen_solver = "amg"
 
     try:
@@ -267,8 +267,8 @@ def get_clusters(
     max_graph_size,
     n_threads,
     name,
-    drop_first=True,
-    norm_laplacian=False,
+    drop_first=False,
+    norm_laplacian=True,
     parallel=False,
 ):
     n_removed_nodes = 0
