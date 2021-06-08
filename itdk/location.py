@@ -84,10 +84,11 @@ def process_file(store, data, ases, path, counter, file_logger, to_radians):
         check_buffers(store, data, to_radians, True)
 
 def process_location_with_ases(geo_path, ases_path, to_radians=True):
+    os.makedirs("logs/", exist_ok=True)
+    os.makedirs("data/", exist_ok=True)
     file_path = "data/geolocation_with_ases.h5"
     counter = tqdm("Processed lines [{}]".format(geo_path), leave=False)
-    file_logger = create_logger("geolocation.log")
-    os.makedirs("data/", exist_ok=True)
+    file_logger = create_logger("logs", os.path.join("geolocation.log"))
     store = pd.HDFStore(file_path)
 
     ases = get_all_ases(ases_path)

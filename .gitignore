@@ -3,6 +3,7 @@ location.log
 interfaces.log
 ases.log
 data/
+logs/
 poetry.lock
 
 # Byte-compiled / optimized / DLL files
