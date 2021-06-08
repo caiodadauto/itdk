@@ -6,7 +6,7 @@ import pandas as pd
 from tqdm import tqdm
 
 from itdk.logger import create_logger
-from itdk.ases import get_all_AS, save_ASes
+from itdk.ases import get_all_ases, save_ases
 
 
 def save(store, data, to_radians):
@@ -56,24 +56,15 @@ def close_tables(stores, file_logger):
         store.close()
 
 
-def list_with_ASes(geo_path, as_file_path, to_radians=True):
-    file_path = "data/geolocation_AS.h5"
-    counter = tqdm("Processed lines")
-    file_logger = create_logger("geolocation.log")
-    os.makedirs("data/", exist_ok=True)
-    store = pd.HDFStore(file_path)
-
-    ASes = get_all_AS(as_file_path)
-    save_ASes(ASes, file_path)
-    data = dict(ids=[], latitudes=[], longitudes=[], ases=[], idxb=0, idxe=0)
-    with open(geo_path, "r") as f:
+def process_file(store, data, ases, path, counter, file_logger, to_radians):
+    with open(path, "r") as f:
         for line in f:
             if line[0] != "#":
                 splited_line = re.split(r"\t", line)
                 node_id = splited_line[0].split(" ")[1][:-1]
-                if node_id in ASes:
+                if node_id in ases:
                     data["ids"].append(node_id)
-                    data["ases"].append(ASes[node_id])
+                    data["ases"].append(ases[node_id])
                     data["latitudes"].append(
                         to_float(splited_line[5], file_logger, data["idxe"])
                     )
@@ -91,8 +82,20 @@ def list_with_ASes(geo_path, as_file_path, to_radians=True):
                     data["longitudes"] = []
             counter.update()
         check_buffers(store, data, to_radians, True)
-    counter.close()
+
+def process_location_with_ases(geo_path, ases_path, to_radians=True):
+    file_path = "data/geolocation_with_ases.h5"
+    counter = tqdm("Processed lines [{}]".format(geo_path), leave=False)
+    file_logger = create_logger("geolocation.log")
+    os.makedirs("data/", exist_ok=True)
+    store = pd.HDFStore(file_path)
+
+    ases = get_all_ases(ases_path)
+    save_ases(ases, file_path)
+    data = dict(ids=[], latitudes=[], longitudes=[], ases=[], idxb=0, idxe=0)
+    process_file(store, data, ases, file_path, counter, file_logger, to_radians)
     file_logger.info(
         "The tabel for {} was closed".format(store.get_storer("geo").table)
     )
+    counter.close()
     store.close()
