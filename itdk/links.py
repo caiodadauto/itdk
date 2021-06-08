@@ -2,9 +2,9 @@ import os
 import re
 
 import threading
-import concurrent.futures
 import pandas as pd
-from progress.counter import Counter
+from tqdm import tqdm
+import concurrent.futures
 
 from itdk.logger import create_logger
 
@@ -26,7 +26,6 @@ def get_inter_nodes_from_link(line):
             interfaces.append("")
         else:
             interfaces.append(raw_node.split(":")[1])
-
     return nodes, interfaces
 
 
@@ -56,7 +55,7 @@ def merge_dict(from_d, to_d):
 
 
 class LinkParser:
-    def __init__(self, node_ases):
+    def __init__(self, node_ases, data_dir):
         self.links = {}
         self.intra_AS = 0
         self.inter_AS = 0
@@ -64,6 +63,7 @@ class LinkParser:
         self.count_links = {}
         self.node_ases = node_ases
         self.lock = threading.Lock()
+        self.data_dir = data_dir
 
     def parse_link(self, inter_nodes):
         nodes, interfaces = inter_nodes
@@ -106,16 +106,16 @@ class LinkParser:
                         self.inter_AS += 1
 
     def write_file(self, AS, text):
-        with open("data/links/{}.csv".format(AS), "a") as f:
+        with open(os.paht.join(self.data_dir, "{}.csv".format(AS)), "w") as f:
             f.write(text)
 
 
-def save_links_for_ases(node_ases, inter_node_links, file_logger):
-    parser = LinkParser(node_ases)
-    with concurrent.futures.ThreadPoolExecutor(max_workers=6) as executor:
+def save_links_for_ases(node_ases, inter_node_links, file_logger, data_dir):
+    parser = LinkParser(node_ases, data_dir)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
         for inter_nodes in inter_node_links:
             executor.submit(parser.parse_link, inter_nodes)
-    with concurrent.futures.ThreadPoolExecutor(max_workers=6) as executor:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
         for AS, text in parser.links.items():
             executor.submit(parser.write_file, AS, text)
     msg = (
@@ -128,22 +128,22 @@ def save_links_for_ases(node_ases, inter_node_links, file_logger):
 
 
 def extract_links_for_ases(link_path, geo_ases_path):
-    inter_node_links = []
     count_links = {}
-    root_dir = "data/links"
-    counter = Counter("Processed Links ")
-    file_logger = create_logger("link.log")
-    os.makedirs(root_dir, exist_ok=True)
-    if not is_empty(root_dir):
-        msg = "The directory {} is not empty.".format(root_dir)
+    inter_node_links = []
+    log_dir = "logs"
+    data_dir = os.path.join("data", "links")
+    log_path = os.path.join(log_dir, "links.log")
+    os.makedirs(log_dir, exist_ok=True)
+    os.makedirs(data_dir, exist_ok=True)
+    file_logger = create_logger(log_path)
+    counter = tqdm("Processed lines [{}]".format(link_path), leave=False)
+    if not is_empty(data_dir):
+        msg = "The directory {} is not empty.".format(data_dir)
         file_logger.error(msg)
         raise IOError(msg)
-    node_ases = pd.read_hdf(geo_ases_path, "geo", columns=["id", "ases"])
+    node_ases = pd.read_hdf(geo_ases_path, "geo_with_ases", columns=["id", "ases"])
     node_ases.set_index("id", inplace=True)
     node_ases = node_ases.to_dict()["ases"]
-    file_logger.info(
-        "Start the link extraction from {}".format(os.path.abspath(link_path))
-    )
     with open(link_path, "r") as file:
         for line in file:
             if line[0] != "#":
@@ -154,12 +154,12 @@ def extract_links_for_ases(link_path, geo_ases_path):
                     )
                     merge_dict(partial_count, count_links)
                     inter_node_links = []
-            counter.next()
-    partial_count = save_links_for_ases(node_ases, inter_node_links, file_logger)
+            counter.update()
+    partial_count = save_links_for_ases(node_ases, inter_node_links, file_logger, data_dir)
     merge_dict(partial_count, count_links)
     file_logger.info("The extraction is done.")
     df = pd.DataFrame(
         list(zip(count_links.keys(), count_links.values())),
         columns=["AS", "Nlinks"],
     )
-    df.to_csv("data/link_count.csv")
+    df.to_csv(os.path.join("data", "link_count.csv"))
