@@ -26,13 +26,13 @@ def information_from_as(geo_path, links_path, interfaces_path, as_name, scale=Tr
         columns=["id", "latitude", "longitude"],
         where=["ases=='{}'".format(as_name)],
     )
+    if node_locations.shape[0] == 0:
+        return -1
     if scale:
         degree_locations = node_locations.loc[:, ("latitude", "longitude")].values
         node_locations.loc[:, "latitude"] = (degree_locations[:, 0] / 90) + 1
         node_locations.loc[:, "longitude"] = (degree_locations[:, 1] / 180) + 1
         check_coords(node_locations.loc[:, ("latitude", "longitude")])
-    if node_locations.shape[0] == 0:
-        return -1
     try:
         links_df = pd.read_csv(as_links_path, index_col=False, header=None, dtype=str)
         links_df.columns = ["n1", "n2", "ip1", "ip2"]
@@ -121,7 +121,7 @@ def extract_graphs(
     interfaces_path,
     root_path,
     file_logger,
-    minimum_nodes=30,
+    minimum_nodes=20,
 ):
     empty_ases = 0
     small_ases = 0
