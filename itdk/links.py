@@ -1,18 +1,17 @@
 import os
 import re
+from random import shuffle
+from functools import partial
 
-import threading
 import pandas as pd
 from tqdm import tqdm
-import concurrent.futures
+from multiprocessing import Pool
 
 from itdk.logger import create_logger
 
 
 def is_empty(root_dir):
-    files = [
-        name for name in os.listdir(root_dir) if name.split(".")[-1] == "csv"
-    ]
+    files = [name for name in os.listdir(root_dir) if name.split(".")[-1] == "csv"]
     return len(files) == 0
 
 
@@ -29,13 +28,13 @@ def get_inter_nodes_from_link(line):
     return nodes, interfaces
 
 
-def get_AS(idx, nodes, node_ases):
+def get_as(idx, nodes, node_ases):
     node_id = nodes[idx]
     try:
-        AS = node_ases[node_id]
+        as_name = node_ases[node_id]
     except KeyError:
-        AS = None
-    return AS
+        as_name = None
+    return as_name
 
 
 def add_to_links(n1, n2, i1, i2, links, count_links, AS_name):
@@ -54,77 +53,93 @@ def merge_dict(from_d, to_d):
             to_d[k] = v
 
 
-class LinkParser:
-    def __init__(self, node_ases, data_dir):
-        self.links = {}
-        self.intra_AS = 0
-        self.inter_AS = 0
-        self.without_AS = 0
-        self.count_links = {}
-        self.node_ases = node_ases
-        self.lock = threading.Lock()
-        self.data_dir = data_dir
+def write_link_file(data, data_dir):
+    as_name, text = data
+    with open(os.path.join(data_dir, "{}.csv".format(as_name)), "a") as f:
+        f.write(text)
 
-    def parse_link(self, inter_nodes):
-        nodes, interfaces = inter_nodes
-        n_nodes = len(nodes)
-        for i in range(n_nodes):
-            AS_i = get_AS(i, nodes, self.node_ases)
-            if AS_i is None:
-                with self.lock:
-                    self.without_AS += 1
+
+def link_parser(inter_nodes, node_ases):
+    links = {}
+    n_links = {}
+    n_inter_links = 0
+    n_intra_links = 0
+    n_non_as_links = 0
+    nodes, interfaces = inter_nodes
+    n_nodes = len(nodes)
+    for i in range(n_nodes):
+        as_i = get_as(i, nodes, node_ases)
+        if as_i is None:
+            n_non_as_links += 1
+            continue
+        for j in range((i + 1), n_nodes):
+            as_j = get_as(j, nodes, node_ases)
+            if as_j is None:
+                n_non_as_links += 1
                 continue
-            for j in range((i + 1), n_nodes):
-                AS_j = get_AS(j, nodes, self.node_ases)
-                if AS_j is None:
-                    with self.lock:
-                        self.without_AS += 1
-                    continue
-                if AS_i == AS_j:
-                    with self.lock:
-                        add_to_links(
-                            nodes[i],
-                            nodes[j],
-                            interfaces[i],
-                            interfaces[j],
-                            self.links,
-                            self.count_links,
-                            AS_i,
-                        )
-                        self.intra_AS += 1
-                else:
-                    with self.lock:
-                        add_to_links(
-                            nodes[i],
-                            nodes[j],
-                            interfaces[i],
-                            interfaces[j],
-                            self.links,
-                            self.count_links,
-                            "edge_links",
-                        )
-                        self.inter_AS += 1
-
-    def write_file(self, AS, text):
-        with open(os.paht.join(self.data_dir, "{}.csv".format(AS)), "w") as f:
-            f.write(text)
+            if as_i == as_j:
+                add_to_links(
+                    nodes[i],
+                    nodes[j],
+                    interfaces[i],
+                    interfaces[j],
+                    links,
+                    n_links,
+                    as_i,
+                )
+                n_intra_links += 1
+            else:
+                add_to_links(
+                    nodes[i],
+                    nodes[j],
+                    interfaces[i],
+                    interfaces[j],
+                    links,
+                    n_links,
+                    "edge_links",
+                )
+                n_inter_links += 1
+    return links, n_links, n_inter_links, n_intra_links, n_non_as_links
 
 
 def save_links_for_ases(node_ases, inter_node_links, file_logger, data_dir):
-    parser = LinkParser(node_ases, data_dir)
-    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
-        for inter_nodes in inter_node_links:
-            executor.submit(parser.parse_link, inter_nodes)
-    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
-        for AS, text in parser.links.items():
-            executor.submit(parser.write_file, AS, text)
+    count_links = {}
+    inter_links = 0
+    intra_links = 0
+    non_as_links = 0
+    links_to_write = []
+    shuffle(inter_node_links)
+    chunk_size = len(inter_node_links) // 8
+    chunk_size = 1 if chunk_size == 0 else chunk_size
+    partial_writer = partial(write_link_file, data_dir=data_dir)
+    partial_parser = partial(link_parser, node_ases=node_ases)
+    with Pool(8) as pool:
+        for (
+            links,
+            n_links,
+            n_inter_links,
+            n_intra_links,
+            n_non_as_links,
+        ) in pool.imap_unordered(partial_parser, inter_node_links, chunk_size):
+            inter_links += n_inter_links
+            intra_links += n_intra_links
+            non_as_links += n_non_as_links
+            merge_dict(n_links, count_links)
+            links_to_write.append(links)
+
+    with Pool(8) as pool:
+        for links in links_to_write:
+            chunk_size = len(links) // 8
+            chunk_size = 1 if chunk_size == 0 else chunk_size
+            for _ in pool.imap_unordered(partial_writer, links.items(), chunk_size):
+                pass
     msg = (
-        "Links were saved, where: {} were ignored,".format(parser.without_AS)
-        + " {} were inter AS".format(parser.inter_AS)
-        + " {} were intra AS".format(parser.intra_AS)
+        "Links were saved, where: {} were ignored,".format(non_as_links)
+        + " {} were inter AS".format(inter_links)
+        + " {} were intra AS".format(intra_links)
     )
     file_logger.info(msg)
-    return parser.count_links
+    return count_links
 
 
 def extract_links_for_ases(link_path, geo_ases_path):
@@ -148,14 +163,16 @@ def extract_links_for_ases(link_path, geo_ases_path):
         for line in file:
             if line[0] != "#":
                 inter_node_links.append(get_inter_nodes_from_link(line))
-                if len(inter_node_links) == 10000:
+                if len(inter_node_links) == 200000:
                     partial_count = save_links_for_ases(
-                        node_ases, inter_node_links, file_logger
+                        node_ases, inter_node_links, file_logger, data_dir
                     )
                     merge_dict(partial_count, count_links)
                     inter_node_links = []
             counter.update()
-    partial_count = save_links_for_ases(node_ases, inter_node_links, file_logger, data_dir)
+    partial_count = save_links_for_ases(
+        node_ases, inter_node_links, file_logger, data_dir
+    )
     merge_dict(partial_count, count_links)
     file_logger.info("The extraction is done.")
     df = pd.DataFrame(

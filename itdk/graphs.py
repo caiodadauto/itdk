@@ -3,10 +3,72 @@ import os
 import numpy as np
 import pandas as pd
 import graph_tool as gt
-from numba import jit, float64, int64
+from numba import jit, prange, float64, int64
 
 from itdk.logger import create_logger
 from itdk.utils import get_unique_index
+
+
+# class Interfaces:
+#     def __init__(self, path):
+#         with open(path, "r") as f:
+#             drop = 0
+#             self._interfaces = f.readlines()
+#             for l in self._interfaces:
+#                 if l[0] == "#":
+#                     drop += 1
+#             self._interfaces = self._interfaces[drop:]
+#         self._sep = re.compile(r"\s+")
+#
+#     def get_node_interfaces(self, node_id):
+#         idx = int(node_id[1:]) - 1
+#         assets = self._sep.split(self._interfaces[idx].rstrip())
+#         print(assets)
+#         read_node_id = assets[1][0:-1]
+#         if read_node_id != node_id:
+#             raise ValueError(
+#                 "The requested ID {} is different of the read one {}".format(
+#                     node_id, read_node_id
+#                 )
+#             )
+#         node_interfaces = assets[2:]
+#         print(node_interfaces)
+
+
+# def fill_one_ip_gap(links, prefix, addrs, rng):
+#     links = np.ascontiguousarray(links)
+#     links = np.ascontiguousarray(links)
+#     for i in range(len(links)):
+#         ip1 = links[i][0]
+#         ip2 = links[i][1]
+#         # if ip1 == np.nan and ip2 == np.nan:
+#         # create
+#         # if ip2 is np.nan:
+
+
+# def inspect_addrs(links, interfaces, file_logger, seed=12345):
+#     ip1 = links["ip1"]
+#     ip2 = links["ip2"]
+#     addrs = pd.concat([ip1, ip2]).fillna("").sort_values()
+#     prefix = (
+#         pd.concat([ip1, ip2]).apply(lambda s: ".".join(s.split(".")[0:-1])).unique()
+#     )
+#     ip1_na = links["ip1"].isna()
+#     ip2_na = links["ip2"].isna()
+#     # without_addrs = ip1_na & ip2_na
+#     one_addrs = ~(ip1_na & ip2_na)
+#     if addrs.empty:
+#         # TODO: implement the synthetic IP generator
+#         file_logger.info("The AS {} does not have associated addresses")
+#         return -1
+#     rng = np.random.default_rng(seed)
+#     fill_one_ip_gap(
+#         links.loc[:, ("ip1", "ip2")].values,
+#         one_addrs.values.flatten(),
+#         prefix.values.flatten(),
+#         rng,
+#     )
+#     # fill_two_ip_gaps(links, without_addrs, prefix, rng)
 
 
 def check_coords(coordinates):
@@ -17,8 +79,7 @@ def check_coords(coordinates):
         )
 
 
-def information_from_as(geo_path, links_path, interfaces_path, as_name, scale=True):
-    as_interfaces_path = os.path.join(interfaces_path, as_name + ".csv")
+def information_from_as(geo_path, links_path, as_name, as_issues, scale=True):
     as_links_path = os.path.join(links_path, as_name + ".csv")
     node_locations = pd.read_hdf(
         geo_path,
@@ -26,8 +87,10 @@ def information_from_as(geo_path, links_path, interfaces_path, as_name, scale=Tr
         columns=["id", "latitude", "longitude"],
         where=["ases=='{}'".format(as_name)],
     )
+
     if node_locations.shape[0] == 0:
-        return -1
+        as_issues["empty_asses"] += 1
+        return None, None
     if scale:
         degree_locations = node_locations.loc[:, ("latitude", "longitude")].values
         node_locations.loc[:, "latitude"] = (degree_locations[:, 0] / 90) + 1
@@ -37,16 +100,9 @@ def information_from_as(geo_path, links_path, interfaces_path, as_name, scale=Tr
         links_df = pd.read_csv(as_links_path, index_col=False, header=None, dtype=str)
         links_df.columns = ["n1", "n2", "ip1", "ip2"]
     except FileNotFoundError:
-        return -2
-    try:
-        interfaces_df = pd.read_csv(
-            as_interfaces_path, index_col=False, header=None, dtype=str
-        )
-        interfaces_df.columns = ["addrs", "id"]
-        interfaces_df = interfaces_df.set_index("id")
-    except FileNotFoundError:
-        return -3
-    return node_locations, links_df, interfaces_df
+        as_issues["non_link_ases"] += 1
+        return None, None
+    return node_locations, links_df
 
 
 def parse_links(nodes, links):
@@ -71,124 +127,133 @@ def parse_links(nodes, links):
     return links_non_loops_multi
 
 
-def parse_interfaces(nodes, interfaces, as_name, file_logger):
+def parse_interfaces(interfaces):
     def to_binary(addrs):
-        binary_interfaces = np.zeros((4, 8, len(addrs)), dtype=np.int8)
-        for i, str_ip in enumerate(addrs):
-            str_ip = str_ip.split(".")
-            int_ip = np.array(list(map(lambda s: int(s), str_ip)))
-            binary_ip = np.fliplr(
-                ((int_ip.reshape(-1, 1) & (1 << np.arange(8))) > 0).astype(np.int8)
-            )
-            binary_interfaces[:, :, i] = binary_ip
-        return binary_interfaces
+        str_ip = addrs.split(".")
+        int_ip = np.array(list(map(lambda s: int(s), str_ip)))
+        binary_addrs = np.fliplr(
+            ((int_ip.reshape(-1, 1) & (1 << np.arange(8))) > 0).astype(np.uint8)
+        )
+        return binary_addrs
 
-    node_ids = nodes["id"]
-    interfaces_of_nodes = []
-    for node_id in node_ids:
-        try:
-            node_addrs = interfaces.loc[node_id].values.flatten()
-        except KeyError:
-            file_logger.warning("Node {} in AS {} does not have any interface".format(node_id, as_name))
-            node_addrs = []
-        interfaces_of_nodes.append(to_binary(node_addrs))
-    return interfaces_of_nodes
+    edge_interfaces = np.ones(interfaces.shape[0], 32, dtype=np.uint8)
+    for i, inter_str in enumerate(interfaces):
+        if inter_str != "":
+            inter_bin = to_binary(inter_str)
+            edge_interfaces[i] = inter_bin
+    return edge_interfaces
 
 
-@jit(float64[:](int64[:, :], float64[:, :]))
+@jit(float64[:](int64[:, :], float64[:, :]), parallel=True, fastmath=True)
 def get_edge_weights(edges, locations):
     size = edges.shape[0]
     weights = np.zeros(edges.shape[0])
-    for i in range(size):
+    weights = np.ascontiguousarray(weights)
+    for i in prange(size):
         p, s = edges[i]
         weights[i] = np.linalg.norm(locations[p] - locations[s])
     return weights
 
 
-def create_graphs(locations, interfaces, edges, edge_weights, graph_path):
-    g = gt.Graph(directed=False)
+def create_graph(links, locations, graph_path):
+    link_ip1 = links.loc[:, ("label1", "label2", "ip1")]
+    link_ip2 = links.loc[:, ("label2", "label1", "ip2")]
+    link_ip1.columns = ["label1", "label2", "ip"]
+    link_ip2.columns = ["label1", "label2", "ip"]
+
+    links = pd.concat([link_ip1, link_ip2], axis=0).sort_values(["label1"])
+    edges = links.loc[:, ("label1", "label2")].values
+    edge_interfaces = parse_interfaces(links.loc[:, "ip"].values)
+    edge_weights = get_edge_weights(edges, locations)
+
+    g = gt.Graph()
     g.add_vertex(locations.shape[0])
-    g.vp.pos = g.new_vp("vector<float>", vals=locations)
-    g.vp.interface = g.new_vp("object", vals=interfaces)
     g.add_edge_list(edges)
+    g.vp.pos = g.new_vp("vector<float>", vals=locations)
     g.ep.weight = g.new_ep("float", vals=edge_weights)
+    g.ep.weight = g.new_ep("vector<bool>", vals=edge_interfaces)
     g.save(graph_path)
+    return g
+
+
+def parse_locations(node_locations, minimum_nodes, as_issues, file_logger):
+    X = node_locations.loc[:, ("latitude", "longitude")].values
+    noised_X, labels, nodes, _, _ = get_unique_index(X, add_noise=True)
+    node_locations.loc[:, ("latitude", "longitude")] = noised_X
+    node_locations["labels"] = labels
+    check_coords(noised_X)
+    if nodes.shape[0] < minimum_nodes:
+        as_issues["small_ases"] += 1
+        return None
+
+    prune_labels = node_locations.duplicated(subset=["labels"])
+    node_locations = node_locations.loc[~prune_labels]
+    node_locations = node_locations.sort_values(by=["labels"])
+    file_logger.info(
+        "{} duplicated nodes were removed even after noise addition".format(
+            (~prune_labels).sum()
+        )
+    )
+    return node_locations
 
 
 def extract_graphs(
     geo_path,
     links_path,
     interfaces_path,
-    root_path,
+    data_dir,
     file_logger,
-    minimum_nodes=20,
+    minimum_nodes=15,
 ):
-    empty_ases = 0
-    small_ases = 0
-    non_link_ases = 0
-    non_interfaces_ases = 0
     ases = pd.read_hdf(geo_path, "ases").values.squeeze()
+    as_issues = dict(empty_ases=0, small_ases=0, non_link_ases=0)
     for as_name in ases:
-        inf_out = information_from_as(geo_path, links_path, interfaces_path, as_name)
-        if type(inf_out) is int:
-            if inf_out == -1:
-                empty_ases += 1
-                continue
-            elif inf_out == -2:
-                non_link_ases += 1
-                continue
-            else:
-                non_interfaces_ases += 1
-                continue  # TODO: generate synthetic interfaces optionally
-        node_locations, links, interfaces = inf_out
-        print("AS", as_name, "nodes", node_locations.shape[0], "links", links.shape[0], "interfaces", interfaces.shape[0])
-
-        X = node_locations.loc[:, ("latitude", "longitude")].values
-        noised_X, labels, nodes, _, _ = get_unique_index(X, add_noise=True)
-        node_locations.loc[:, ("latitude", "longitude")] = noised_X
-        node_locations["labels"] = labels
-        check_coords(noised_X)
-        if nodes.shape[0] < minimum_nodes:
-            small_ases += 1
+        node_locations, links = information_from_as(
+            geo_path, links_path, interfaces_path, as_name, as_issues
+        )
+        if node_locations is None or links is None:
             continue
-
-        prune_labels = node_locations.duplicated(subset=["labels"])
-        node_locations = node_locations.loc[~prune_labels]
-        node_locations = node_locations.sort_values(by=["labels"])
-        links_non_loops_multi = parse_links(node_locations, links)
-
-        edges = links_non_loops_multi.loc[:, ("label1", "label2")].values
+        file_logger.info(
+            "AS: {}, nodes: {}, links: {}".format(
+                as_name,
+                node_locations.shape[0],
+                links.shape[0],
+            )
+        )
+        tmp = parse_locations(node_locations, minimum_nodes, as_issues, file_logger)
+        if tmp is None:
+            continue
+        node_locations = tmp
         locations = node_locations.loc[:, ("latitude", "longitude")].values
-        edge_weights = get_edge_weights(edges, locations)
-        interfaces_of_nodes = parse_interfaces(node_locations, interfaces, as_name, file_logger)
-        graph_path = os.path.join(root_path, "{}.gt.xz".format(as_name))
-        create_graphs(locations, interfaces_of_nodes, edges, edge_weights, graph_path)
+        links_non_loops_multi = parse_links(node_locations, links)
+        graph_path = os.path.join(data_dir, "{}.gt.xz".format(as_name))
+        g = create_graph(locations, links_non_loops_multi, graph_path)
 
-        n_nodes = nodes.shape[0]
-        all_n_nodes = labels.shape[0]
+        n_nodes = g.num_vertices()
         n_links = links_non_loops_multi.shape[0]
         all_n_links = links.shape[0]
         file_logger.info(
-            "For AS {},  {} of {} nodes and {} of {} links.".format(
-                as_name, n_nodes, all_n_nodes, n_links, all_n_links
+            "For AS {},  {} noised nodes and {} of {} links.".format(
+                as_name, n_nodes, n_links, all_n_links
             )
         )
     file_logger.info(
         "{} ASes do not present at least {} distinguish geolocated nodes;"
         "{} ASes do not have geolocated nodes; "
-        "{} ASes do not have links; "
-        "{} ASes do not have interfaces".format(
-            small_ases,
+        "{} ASes do not have links; ".format(
+            as_issues["small_ases"],
             minimum_nodes,
-            empty_ases,
-            non_link_ases,
-            non_interfaces_ases,
+            as_issues["empty_ases"],
+            as_issues["non_link_ases"],
         )
     )
 
 
 def create_graphs_from_ases(geo_path, links_path, interfaces_path):
-    root_path = os.path.join("data", "graphs")
-    os.makedirs(root_path, exist_ok=True)
-    file_logger = create_logger("graphs.log")
-    extract_graphs(geo_path, links_path, interfaces_path, root_path, file_logger)
+    log_dir = "logs"
+    data_dir = os.path.join("data", "graphs")
+    os.makedirs(log_dir, exist_ok=True)
+    os.makedirs(data_dir, exist_ok=True)
+    log_path = os.path.join(log_dir, "graphs.log")
+    file_logger = create_logger(log_path)
+    extract_graphs(geo_path, links_path, interfaces_path, data_dir, file_logger)

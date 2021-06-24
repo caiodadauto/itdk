@@ -1,10 +1,6 @@
 import argparse
 
-from itdk import links
-
-
-def run(link_path, geo_ases_path):
-    links.extract_links_for_ases(link_path, geo_ases_path)
+from itdk.links import extract_links_for_ases
 
 
 if __name__ == "__main__":
@@ -12,4 +8,4 @@ if __name__ == "__main__":
     p.add_argument("link_path", type=str)
     p.add_argument("geo_ases_path", type=str)
     args = p.parse_args()
-    run(**vars(args))
+    extract_links_for_ases(**vars(args))

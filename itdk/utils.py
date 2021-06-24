@@ -37,7 +37,6 @@ def noised_location(X, inverse_idx, counts, mean, std, bound, seed=12345):
 
 
 def get_unique_index(X, add_noise=False, mean=0, std=0.8, bound=[0, 2]):
-    n_combination = 1
     if add_noise:
         _, index, inverse_idx, counts = np.unique(
             X, axis=0, return_index=True, return_inverse=True, return_counts=True
@@ -47,13 +46,9 @@ def get_unique_index(X, add_noise=False, mean=0, std=0.8, bound=[0, 2]):
     n_labels = len(index)
     counts = np.zeros(n_labels)
     labels = np.arange(0, n_labels, 1)
-    for label in labels:
-        c = (inverse_idx == label).sum()
-        counts[label] = c
-        n_combination *= c
     if add_noise:
-        return X, inverse_idx, labels, counts, n_combination
-    return inverse_idx, labels, counts, n_combination
+        return X, inverse_idx, labels, counts
+    return inverse_idx, labels, counts
 
 
 def get_graph_samples(df_slice, key_col="Num of Nodes"):

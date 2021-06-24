@@ -34,9 +34,7 @@ def to_float(str_float, file_logger, index):
     try:
         v = float(str_float)
     except Exception:
-        file_logger.info(
-            "Not float format: {}, for index {}".format(str_float, index)
-        )
+        file_logger.info("Not float format: {}, for index {}".format(str_float, index))
         v = 360.0
     return v
 
@@ -50,13 +48,14 @@ def close_tables(stores, file_logger):
     for key, store in stores.items():
         file_logger.info(
             "The tabel for {} was closed\n{}".format(
-                key, store.get_storer("geo").table
+                key, store.get_storer("geo_with_ases").table
             )
         )
         store.close()
 
 
-def process_file(store, data, ases, path, counter, file_logger, to_radians):
+def process_file(store, data, ases, path, file_logger, to_radians):
+    counter = tqdm("Processed lines [{}]".format(path), leave=False)
     with open(path, "r") as f:
         for line in f:
             if line[0] != "#":
@@ -74,16 +73,18 @@ def process_file(store, data, ases, path, counter, file_logger, to_radians):
                     data["idxe"] += 1
 
                 if data["idxe"] - data["idxb"] == 100000:
-                    save(store, data, to_radians, True)
+                    save(store, data, to_radians)
                     data["idxb"] = data["idxe"]
                     data["ids"] = []
                     data["ases"] = []
                     data["latitudes"] = []
                     data["longitudes"] = []
             counter.update()
-        check_buffers(store, data, to_radians, True)
+        counter.close()
+        check_buffers(store, data, to_radians)
 
-def process_location_with_ases(geo_path, ases_path, to_radians=True):
+
+def process_location_with_ases(geo_path, ases_path, to_radians=False):
     log_dir = "logs"
     data_dir = "data"
     os.makedirs(log_dir, exist_ok=True)
@@ -92,14 +93,12 @@ def process_location_with_ases(geo_path, ases_path, to_radians=True):
     data_path = os.path.join(data_dir, "geolocation_with_ases.h5")
     file_logger = create_logger(log_path)
     store = pd.HDFStore(data_path)
-    counter = tqdm("Processed lines [{}]".format(geo_path), leave=False)
 
     ases = get_all_ases(ases_path)
     save_ases(ases, data_path)
     data = dict(ids=[], latitudes=[], longitudes=[], ases=[], idxb=0, idxe=0)
-    process_file(store, data, ases, data_path, counter, file_logger, to_radians)
+    process_file(store, data, ases, geo_path, file_logger, to_radians)
     file_logger.info(
-        "The tabel for {} was closed".format(store.get_storer("geo").table)
+        "The tabel for {} was closed".format(store.get_storer("geo_with_ases").table)
     )
-    counter.close()
     store.close()
