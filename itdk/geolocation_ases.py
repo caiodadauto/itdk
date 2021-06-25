@@ -27,7 +27,7 @@ def save(store, data, to_radians):
     )
     df.latitude = df.latitude.astype("float32")
     df.longitude = df.longitude.astype("float32")
-    store.append("geo_with_ases", df, min_itemsize={"id": 9, "ases": 10})
+    store.append("geo_with_ases", df, min_itemsize={"id": 10, "ases": 10})
 
 
 def to_float(str_float, file_logger, index):
