@@ -3,6 +3,7 @@ import os
 import numpy as np
 import pandas as pd
 import graph_tool as gt
+from tqdm import tqdm
 from numba import jit, prange, float64, int64
 
 from itdk.logger import create_logger
@@ -83,13 +84,13 @@ def information_from_as(geo_path, links_path, as_name, as_issues, scale=True):
     as_links_path = os.path.join(links_path, as_name + ".csv")
     node_locations = pd.read_hdf(
         geo_path,
-        "geo",
+        "geo_with_ases",
         columns=["id", "latitude", "longitude"],
         where=["ases=='{}'".format(as_name)],
     )
 
     if node_locations.shape[0] == 0:
-        as_issues["empty_asses"] += 1
+        as_issues["empty_ases"] += 1
         return None, None
     if scale:
         degree_locations = node_locations.loc[:, ("latitude", "longitude")].values
@@ -129,14 +130,14 @@ def parse_links(nodes, links):
 
 def parse_interfaces(interfaces):
     def to_binary(addrs):
-        str_ip = addrs.split(".")
-        int_ip = np.array(list(map(lambda s: int(s), str_ip)))
+        addrs = addrs.split(".")
+        int_ip = np.array(list(map(lambda s: int(s), addrs)))
         binary_addrs = np.fliplr(
             ((int_ip.reshape(-1, 1) & (1 << np.arange(8))) > 0).astype(np.uint8)
         )
-        return binary_addrs
+        return binary_addrs.flatten()
 
-    edge_interfaces = np.ones(interfaces.shape[0], 32, dtype=np.uint8)
+    edge_interfaces = np.ones((interfaces.shape[0], 32), dtype=np.uint8)
     for i, inter_str in enumerate(interfaces):
         if inter_str != "":
             inter_bin = to_binary(inter_str)
@@ -155,7 +156,7 @@ def get_edge_weights(edges, locations):
     return weights
 
 
-def create_graph(links, locations, graph_path):
+def create_graph(locations, links, graph_path):
     link_ip1 = links.loc[:, ("label1", "label2", "ip1")]
     link_ip2 = links.loc[:, ("label2", "label1", "ip2")]
     link_ip1.columns = ["label1", "label2", "ip"]
@@ -163,7 +164,7 @@ def create_graph(links, locations, graph_path):
 
     links = pd.concat([link_ip1, link_ip2], axis=0).sort_values(["label1"])
     edges = links.loc[:, ("label1", "label2")].values
-    edge_interfaces = parse_interfaces(links.loc[:, "ip"].values)
+    edge_interfaces = parse_interfaces(links.loc[:, "ip"].fillna("").values)
     edge_weights = get_edge_weights(edges, locations)
 
     g = gt.Graph()
@@ -171,14 +172,15 @@ def create_graph(links, locations, graph_path):
     g.add_edge_list(edges)
     g.vp.pos = g.new_vp("vector<float>", vals=locations)
     g.ep.weight = g.new_ep("float", vals=edge_weights)
-    g.ep.weight = g.new_ep("vector<bool>", vals=edge_interfaces)
+    g.ep.ip = g.new_ep("vector<bool>", vals=edge_interfaces)
+    # print(g.ep.ip.get_2d_array(list(range(32))).T)
     g.save(graph_path)
     return g
 
 
 def parse_locations(node_locations, minimum_nodes, as_issues, file_logger):
     X = node_locations.loc[:, ("latitude", "longitude")].values
-    noised_X, labels, nodes, _, _ = get_unique_index(X, add_noise=True)
+    noised_X, labels, nodes, _ = get_unique_index(X, add_noise=True)
     node_locations.loc[:, ("latitude", "longitude")] = noised_X
     node_locations["labels"] = labels
     check_coords(noised_X)
@@ -207,9 +209,9 @@ def extract_graphs(
 ):
     ases = pd.read_hdf(geo_path, "ases").values.squeeze()
     as_issues = dict(empty_ases=0, small_ases=0, non_link_ases=0)
-    for as_name in ases:
+    for as_name in tqdm(ases):
         node_locations, links = information_from_as(
-            geo_path, links_path, interfaces_path, as_name, as_issues
+            geo_path, links_path, as_name, as_issues
         )
         if node_locations is None or links is None:
             continue
@@ -251,7 +253,7 @@ def extract_graphs(
 
 def create_graphs_from_ases(geo_path, links_path, interfaces_path):
     log_dir = "logs"
-    data_dir = os.path.join("data", "graphs")
+    data_dir = os.path.join("data", "raw_graphs_lack_inters")
     os.makedirs(log_dir, exist_ok=True)
     os.makedirs(data_dir, exist_ok=True)
     log_path = os.path.join(log_dir, "graphs.log")
