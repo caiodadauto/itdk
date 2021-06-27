@@ -128,7 +128,7 @@ def parse_links(nodes, links):
     return links_non_loops_multi
 
 
-def parse_interfaces(interfaces):
+def parse_interfaces(interfaces, edges):
     def to_binary(addrs):
         addrs = addrs.split(".")
         int_ip = np.array(list(map(lambda s: int(s), addrs)))
@@ -137,11 +137,14 @@ def parse_interfaces(interfaces):
         )
         return binary_addrs.flatten()
 
-    edge_interfaces = np.ones((interfaces.shape[0], 32), dtype=np.uint8)
-    for i, inter_str in enumerate(interfaces):
-        if inter_str != "":
-            inter_bin = to_binary(inter_str)
-            edge_interfaces[i] = inter_bin
+    dtype = np.dtype([('ip', np.uint8, (2, 32)), ('order', int, (2))])
+    edge_interfaces = np.ones(interfaces.shape[0], dtype=dtype)
+    for i, (inters, edge) in enumerate(zip(interfaces, edges)):
+        for j, (inter_str, node) in enumerate(zip(inters, edge)):
+            if inter_str != "":
+                inter_bin = to_binary(inter_str)
+                edge_interfaces["ip"][i] = inter_bin
+            edge_interfaces["order"][i][j] = node
     return edge_interfaces
 
 
@@ -157,23 +160,31 @@ def get_edge_weights(edges, locations):
 
 
 def create_graph(locations, links, graph_path):
-    link_ip1 = links.loc[:, ("label1", "label2", "ip1")]
-    link_ip2 = links.loc[:, ("label2", "label1", "ip2")]
-    link_ip1.columns = ["label1", "label2", "ip"]
-    link_ip2.columns = ["label1", "label2", "ip"]
+    # link_ip1 = links.loc[:, ("label1", "label2", "ip1")]
+    # link_ip2 = links.loc[:, ("label2", "label1", "ip2")]
+    # link_ip1.columns = ["label1", "label2", "ip"]
+    # link_ip2.columns = ["label1", "label2", "ip"]
 
-    links = pd.concat([link_ip1, link_ip2], axis=0).sort_values(["label1"])
+    # links = pd.concat([link_ip1, link_ip2], axis=0).sort_values(["label1"])
+    # edges = links.loc[:, ("label1", "label2")].values
+    # edge_interfaces = parse_interfaces(links.loc[:, "ip"].fillna("").values)
+    # edge_weights = get_edge_weights(edges, locations)
+
+    links = links.sort_values(["label1"])
     edges = links.loc[:, ("label1", "label2")].values
-    edge_interfaces = parse_interfaces(links.loc[:, "ip"].fillna("").values)
+    edge_interfaces = parse_interfaces(
+        links.loc[:, ("ip1", "ip2")].fillna("").values, edges
+    )
     edge_weights = get_edge_weights(edges, locations)
 
-    g = gt.Graph()
+    g = gt.Graph(directed=False)
     g.add_vertex(locations.shape[0])
     g.add_edge_list(edges)
     g.vp.pos = g.new_vp("vector<float>", vals=locations)
     g.ep.weight = g.new_ep("float", vals=edge_weights)
-    g.ep.ip = g.new_ep("vector<bool>", vals=edge_interfaces)
+    g.ep.ip = g.new_ep("object", vals=edge_interfaces)
     # print(g.ep.ip.get_2d_array(list(range(32))).T)
+    # print(next(iter(g.ep.ip))) Object
     g.save(graph_path)
     return g
 
@@ -202,7 +213,6 @@ def parse_locations(node_locations, minimum_nodes, as_issues, file_logger):
 def extract_graphs(
     geo_path,
     links_path,
-    interfaces_path,
     data_dir,
     file_logger,
     minimum_nodes=15,
@@ -251,11 +261,11 @@ def extract_graphs(
     )
 
 
-def create_graphs_from_ases(geo_path, links_path, interfaces_path):
+def create_graphs_from_ases(geo_path, links_path):
     log_dir = "logs"
     data_dir = os.path.join("data", "raw_graphs_lack_inters")
     os.makedirs(log_dir, exist_ok=True)
     os.makedirs(data_dir, exist_ok=True)
     log_path = os.path.join(log_dir, "graphs.log")
     file_logger = create_logger(log_path)
-    extract_graphs(geo_path, links_path, interfaces_path, data_dir, file_logger)
+    extract_graphs(geo_path, links_path, data_dir, file_logger)
