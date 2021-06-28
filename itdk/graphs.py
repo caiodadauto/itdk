@@ -137,7 +137,7 @@ def parse_interfaces(interfaces, edges):
         )
         return binary_addrs.flatten()
 
-    dtype = np.dtype([('ip', np.uint8, (2, 32)), ('order', int, (2))])
+    dtype = np.dtype([("ip", np.uint8, (2, 32)), ("order", int, (2))])
     edge_interfaces = np.ones(interfaces.shape[0], dtype=dtype)
     for i, (inters, edge) in enumerate(zip(interfaces, edges)):
         for j, (inter_str, node) in enumerate(zip(inters, edge)):
@@ -202,11 +202,12 @@ def parse_locations(node_locations, minimum_nodes, as_issues, file_logger):
     prune_labels = node_locations.duplicated(subset=["labels"])
     node_locations = node_locations.loc[~prune_labels]
     node_locations = node_locations.sort_values(by=["labels"])
-    file_logger.info(
-        "{} duplicated nodes were removed even after noise addition".format(
-            (~prune_labels).sum()
+    if (prune_labels).sum() > 0:
+        file_logger.info(
+            "{} duplicated nodes were removed even after noise addition".format(
+                (prune_labels).sum()
+            )
         )
-    )
     return node_locations
 
 
@@ -226,7 +227,7 @@ def extract_graphs(
         if node_locations is None or links is None:
             continue
         file_logger.info(
-            "AS: {}, nodes: {}, links: {}".format(
+            "AS: {}, raw nodes: {}, raw links: {}".format(
                 as_name,
                 node_locations.shape[0],
                 links.shape[0],
@@ -234,6 +235,7 @@ def extract_graphs(
         )
         tmp = parse_locations(node_locations, minimum_nodes, as_issues, file_logger)
         if tmp is None:
+            print("Skiped: Graph size < {}".format(minimum_nodes))
             continue
         node_locations = tmp
         locations = node_locations.loc[:, ("latitude", "longitude")].values
@@ -243,11 +245,8 @@ def extract_graphs(
 
         n_nodes = g.num_vertices()
         n_links = links_non_loops_multi.shape[0]
-        all_n_links = links.shape[0]
         file_logger.info(
-            "For AS {},  {} noised nodes and {} of {} links.".format(
-                as_name, n_nodes, n_links, all_n_links
-            )
+            "AS: {}, nodes: {}, links: {}".format(as_name, n_nodes, n_links)
         )
     file_logger.info(
         "{} ASes do not present at least {} distinguish geolocated nodes;"
