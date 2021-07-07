@@ -2,9 +2,7 @@ import os
 import re
 import threading
 import concurrent.futures
-from random import shuffle
 
-import numpy as np
 import pandas as pd
 from tqdm import tqdm
 

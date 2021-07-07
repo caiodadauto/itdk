@@ -191,7 +191,7 @@ def create_graph(locations, links, graph_path):
 
 def parse_locations(node_locations, minimum_nodes, as_issues, file_logger):
     X = node_locations.loc[:, ("latitude", "longitude")].values
-    noised_X, labels, nodes, _ = get_unique_index(X, add_noise=True)
+    noised_X, labels, nodes, _ = get_unique_index(X, add_noise=True)[0:4]
     node_locations.loc[:, ("latitude", "longitude")] = noised_X
     node_locations["labels"] = labels
     check_coords(noised_X)
@@ -235,7 +235,6 @@ def extract_graphs(
         )
         tmp = parse_locations(node_locations, minimum_nodes, as_issues, file_logger)
         if tmp is None:
-            print("Skiped: Graph size < {}".format(minimum_nodes))
             continue
         node_locations = tmp
         locations = node_locations.loc[:, ("latitude", "longitude")].values
