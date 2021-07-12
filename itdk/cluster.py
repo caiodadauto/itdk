@@ -32,7 +32,7 @@ def check_components(g, min_graph_size, max_graph_size, name):
             name["cluster"] += 1
         elif size > max_graph_size:
             to_cluster_graphs.append(g)
-        return to_cluster_graphs, size
+        return to_cluster_graphs, 0
 
     valid_mask = (counts >= min_graph_size) & (counts <= max_graph_size)
     invalid_mask = counts < min_graph_size
@@ -51,7 +51,7 @@ def check_components(g, min_graph_size, max_graph_size, name):
     for l in to_cluster_labels:
         gv = gt.GraphView(g, vfilt=labels == l)
         to_cluster_graphs.append(gv)
-    return to_cluster_graphs, sum(counts[invalid_mask])
+    return to_cluster_graphs, counts[invalid_mask].sum()
 
 
 def check_clusters(
@@ -63,7 +63,6 @@ def check_clusters(
     valid_mask = (counts >= min_graph_size) & (counts <= max_graph_size)
     to_cluster_mask = counts > max_graph_size
 
-    nodes_to_remove = np.zeros_like(labels)
     valid_labels = unique_labels[valid_mask]
     invalid_labels = unique_labels[invalid_mask]
     to_cluster_labels = unique_labels[to_cluster_mask]
@@ -80,8 +79,9 @@ def check_clusters(
         to_cluster_graphs += _to_cluster_graphs
         n_removed_nodes += _n_removed_nodes
     for l in invalid_labels:
-        nodes_to_remove[labels == l] = -1
-    gv = gt.GraphView(g, vfilt=nodes_to_remove == -1)
+        invalid_nodes = np.zeros_like(labels)
+        invalid_nodes[labels == l] = -1
+    gv = gt.GraphView(g, vfilt=invalid_nodes == -1)
     _to_cluster_graphs, _n_removed_nodes = check_components(
         gv, min_graph_size, max_graph_size, name
     )
@@ -184,7 +184,7 @@ def run_clustering(
     def graph_slicer(graph_paths, n_threads):
         n_files = len(graph_paths)
         chunk_size = n_files // n_threads
-        if chunk_size < 0:
+        if chunk_size == 0:
             chunk_size = n_files
         idxs = np.arange(0, n_files, chunk_size)
         idxs = np.concatenate([idxs, [n_files]])
