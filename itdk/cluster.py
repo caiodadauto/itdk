@@ -78,15 +78,16 @@ def check_clusters(
         )
         to_cluster_graphs += _to_cluster_graphs
         n_removed_nodes += _n_removed_nodes
-    for l in invalid_labels:
+    if len(invalid_labels) > 0:
         invalid_nodes = np.zeros_like(labels)
-        invalid_nodes[labels == l] = -1
-    gv = gt.GraphView(g, vfilt=invalid_nodes == -1)
-    _to_cluster_graphs, _n_removed_nodes = check_components(
-        gv, min_graph_size, max_graph_size, name
-    )
-    to_cluster_graphs += _to_cluster_graphs
-    n_removed_nodes += _n_removed_nodes
+        for l in invalid_labels:
+            invalid_nodes[labels == l] = -1
+        gv = gt.GraphView(g, vfilt=invalid_nodes == -1)
+        _to_cluster_graphs, _n_removed_nodes = check_components(
+            gv, min_graph_size, max_graph_size, name
+        )
+        to_cluster_graphs += _to_cluster_graphs
+        n_removed_nodes += _n_removed_nodes
     return to_cluster_graphs, n_removed_nodes
 
 
